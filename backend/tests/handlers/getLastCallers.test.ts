@@ -21,8 +21,10 @@ describe('getLastCallers handler', () => {
 
   it('returns the latest caller records', async () => {
     const item: CallerRecord = {
+      recordId: 'contact-123',
       callerNumber: '+18003569377',
       createdAt: '2026-06-25T18:00:00.000Z',
+      contactId: 'contact-123',
       vanityNumbers: ['+1-800-FLOWERS'],
       topThree: ['+1-800-FLOWERS'],
       recordType: 'CALLER_RECORD',
@@ -39,7 +41,19 @@ describe('getLastCallers handler', () => {
     expect(response.headers).toMatchObject({
       'access-control-allow-origin': 'https://example.com',
     });
-    expect(JSON.parse(response.body ?? '{}')).toEqual({ items: [item] });
+    expect(JSON.parse(response.body ?? '{}')).toEqual({
+      items: [
+        {
+          callerNumberMasked: '+*******9377',
+          createdAt: '2026-06-25T18:00:00.000Z',
+          contactId: 'contact-123',
+          vanityNumbers: ['+1-800-FLOWERS'],
+          topThree: ['+1-800-FLOWERS'],
+          recordType: 'CALLER_RECORD',
+        },
+      ],
+    });
+    expect(response.body).not.toContain('+18003569377');
     expect(repository.getLatestCallerRecords).toHaveBeenCalledWith(5);
   });
 

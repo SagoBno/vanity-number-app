@@ -48,10 +48,10 @@ cp frontend/.env.example frontend/.env
 Populate it from the stack outputs:
 
 ```txt
-VITE_API_ENDPOINT=https://70lijskhr5.execute-api.us-east-1.amazonaws.com/dev/callers/latest
-VITE_COGNITO_AUTHORITY=https://cognito-idp.us-east-1.amazonaws.com/us-east-1_EXAMPLE
-VITE_COGNITO_HOSTED_UI_URL=https://vanity-number-123456789012-dev.auth.us-east-1.amazoncognito.com
-VITE_COGNITO_CLIENT_ID=exampleclientid
+VITE_API_ENDPOINT=<ApiEndpoint>
+VITE_COGNITO_AUTHORITY=<DashboardCognitoAuthority>
+VITE_COGNITO_HOSTED_UI_URL=<DashboardCognitoHostedUiUrl>
+VITE_COGNITO_CLIENT_ID=<DashboardUserPoolClientId>
 VITE_COGNITO_REDIRECT_URI=http://localhost:5173/
 VITE_COGNITO_LOGOUT_URI=http://localhost:5173/
 ```

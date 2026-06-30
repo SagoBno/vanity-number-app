@@ -31,7 +31,15 @@ export async function completeSignInIfNeeded(): Promise<AuthSession | null> {
     return null;
   }
 
-  if (window.location.search.includes('code=') && window.location.search.includes('state=')) {
+  const callbackParams = new URLSearchParams(window.location.search);
+
+  if (callbackParams.has('error')) {
+    const error = callbackParams.get('error') ?? 'unknown_error';
+    window.history.replaceState({}, document.title, window.location.pathname);
+    throw new Error(`Sign in failed: ${error}`);
+  }
+
+  if (callbackParams.has('code') && callbackParams.has('state')) {
     const user = await userManager.signinRedirectCallback();
     window.history.replaceState({}, document.title, window.location.pathname);
     return toAuthSession(user);

@@ -84,10 +84,13 @@ function buildCallerRecord(
   contactId: string | undefined,
 ): CallerRecord {
   const now = new Date();
+  const createdAt = now.toISOString();
   const ttl = Math.floor(now.getTime() / 1000) + ttlDays * 24 * 60 * 60;
+  const recordId = contactId ?? `${callerNumber}#${createdAt}`;
   const baseRecord: CallerRecord = {
+    recordId,
     callerNumber,
-    createdAt: now.toISOString(),
+    createdAt,
     vanityNumbers,
     topThree,
     recordType: 'CALLER_RECORD',

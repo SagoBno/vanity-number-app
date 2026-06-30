@@ -25,7 +25,7 @@ docs/amazon-connect/connect-resources.template.yaml
 5. Select or paste the deployed `GenerateVanityNumbersFunctionArn`.
 6. Save.
 
-The SAM template already grants Amazon Connect permission to invoke the Lambda from the same account and region.
+The SAM template grants Amazon Connect permission to invoke the Lambda from the same account and region. For production, redeploy the SAM stack with `ConnectInstanceArn` set to the specific Connect instance ARN so only that instance can invoke the function.
 
 The association can also be created with CloudFormation through `docs/amazon-connect/connect-resources.template.yaml`.
 
@@ -50,7 +50,7 @@ In the `Invoke AWS Lambda function` block:
 
 - Choose the deployed `generateVanityNumbers` Lambda.
 - Use the default Amazon Connect event payload.
-- Set a timeout that is longer than the Lambda timeout, for example 8 seconds.
+- Set a short voice-path timeout, for example 3 seconds. Keep it slightly above the Lambda p95 duration, and route timeout errors to the failure prompt.
 
 The Lambda reads the caller number from:
 
@@ -98,7 +98,7 @@ Failure prompt:
 We were unable to generate vanity numbers for your phone number.
 ```
 
-The Lambda intentionally returns safe fallback values so the contact flow does not expose internal errors to the caller.
+The Lambda intentionally returns safe fallback values for handled errors so the contact flow does not expose internal details to the caller. Contact-flow timeout and invocation errors should still route to the failure prompt.
 
 ## 5. Attach A Phone Number
 

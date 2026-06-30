@@ -15,7 +15,7 @@ interface ParameterStoreConfig {
 }
 
 const ssmClient = new SSMClient({});
-let cachedParameterStoreConfig: Promise<ParameterStoreConfig> | undefined;
+const cachedParameterStoreConfigs = new Map<string, ParameterStoreConfig>();
 
 export async function getConfig(): Promise<AppConfig> {
   const envConfig = getEnvConfig();
@@ -46,22 +46,26 @@ function getEnvConfig(): AppConfig {
 }
 
 async function getParameterStoreConfig(parameterPath: string): Promise<ParameterStoreConfig> {
-  if (cachedParameterStoreConfig === undefined) {
-    cachedParameterStoreConfig = readParameterStoreConfig(parameterPath);
+  const normalizedPath = normalizeParameterPath(parameterPath);
+  const cachedConfig = cachedParameterStoreConfigs.get(normalizedPath);
+
+  if (cachedConfig !== undefined) {
+    return cachedConfig;
   }
 
-  return cachedParameterStoreConfig;
+  const config = await readParameterStoreConfig(normalizedPath);
+  cachedParameterStoreConfigs.set(normalizedPath, config);
+  return config;
 }
 
 async function readParameterStoreConfig(parameterPath: string): Promise<ParameterStoreConfig> {
-  const normalizedPath = normalizeParameterPath(parameterPath);
   const values = new Map<string, string>();
   let nextToken: string | undefined;
 
   do {
     const response = await ssmClient.send(
       new GetParametersByPathCommand({
-        Path: normalizedPath,
+        Path: parameterPath,
         Recursive: false,
         WithDecryption: true,
         NextToken: nextToken,
@@ -70,7 +74,7 @@ async function readParameterStoreConfig(parameterPath: string): Promise<Paramete
 
     for (const parameter of response.Parameters ?? []) {
       if (parameter.Name !== undefined && parameter.Value !== undefined) {
-        values.set(parameter.Name.slice(normalizedPath.length + 1), parameter.Value);
+        values.set(parameter.Name.slice(parameterPath.length + 1), parameter.Value);
       }
     }
 
@@ -106,6 +110,10 @@ function readOptionalPositiveInteger(rawValue: string | undefined): number | und
     return undefined;
   }
 
+  if (!isIntegerString(rawValue)) {
+    return undefined;
+  }
+
   const parsed = Number.parseInt(rawValue, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 }
@@ -115,6 +123,14 @@ function readPositiveInteger(rawValue: string | undefined, fallback: number): nu
     return fallback;
   }
 
+  if (!isIntegerString(rawValue)) {
+    return fallback;
+  }
+
   const parsed = Number.parseInt(rawValue, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function isIntegerString(rawValue: string): boolean {
+  return /^[1-9]\d*$/.test(rawValue.trim());
 }

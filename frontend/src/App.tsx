@@ -24,11 +24,8 @@ import type { CallerRecord } from './types';
 type LoadState = 'idle' | 'loading' | 'ready' | 'error';
 type AuthState = 'checking' | 'disabled' | 'signed-out' | 'signed-in' | 'error';
 
-const deployedFallbackEndpoint =
-  'https://70lijskhr5.execute-api.us-east-1.amazonaws.com/dev/callers/latest';
-
 export function App() {
-  const [apiEndpoint, setApiEndpoint] = useState(defaultApiEndpoint ?? deployedFallbackEndpoint);
+  const [apiEndpoint, setApiEndpoint] = useState(defaultApiEndpoint ?? '');
   const [records, setRecords] = useState<CallerRecord[]>([]);
   const [loadState, setLoadState] = useState<LoadState>('idle');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -58,21 +55,33 @@ export function App() {
   }, []);
 
   const loadRecords = useCallback(async () => {
-    const endpoint = apiEndpoint.trim();
-
-    if (endpoint.length === 0) {
-      setLoadState('error');
-      setErrorMessage('API endpoint is required.');
+    if (authState === 'checking') {
       return;
     }
 
-    if (authState === 'checking') {
+    if (authState === 'disabled') {
+      setLoadState('idle');
+      setErrorMessage('Configure Cognito settings in frontend/.env to load caller records.');
       return;
     }
 
     if (authState === 'signed-out') {
       setLoadState('idle');
       setErrorMessage('Sign in to load caller records.');
+      return;
+    }
+
+    if (authState === 'error') {
+      setLoadState('idle');
+      setErrorMessage('Resolve the authentication error before loading caller records.');
+      return;
+    }
+
+    const endpoint = apiEndpoint.trim();
+
+    if (endpoint.length === 0) {
+      setLoadState('error');
+      setErrorMessage('API endpoint is required.');
       return;
     }
 
@@ -105,7 +114,7 @@ export function App() {
 
     return records.filter((record) => {
       const searchable = [
-        record.callerNumber,
+        record.callerNumberMasked,
         record.contactId ?? '',
         ...record.topThree,
         ...record.vanityNumbers,
@@ -118,7 +127,7 @@ export function App() {
   }, [query, records]);
 
   const metrics = useMemo(() => {
-    const uniqueCallers = new Set(records.map((record) => record.callerNumber)).size;
+    const uniqueCallers = new Set(records.map((record) => record.callerNumberMasked)).size;
     const generatedNumbers = records.reduce(
       (total, record) => total + record.vanityNumbers.length,
       0,
@@ -133,6 +142,25 @@ export function App() {
   }, [records]);
 
   const isLoading = loadState === 'loading';
+  const emptyState = getEmptyStateCopy(authState, isLoading);
+
+  const handleSignIn = useCallback(async () => {
+    try {
+      await signIn();
+    } catch (error) {
+      setAuthState('error');
+      setErrorMessage(error instanceof Error ? error.message : 'Unable to start sign in.');
+    }
+  }, []);
+
+  const handleSignOut = useCallback(async () => {
+    try {
+      await signOut();
+    } catch (error) {
+      setAuthState('error');
+      setErrorMessage(error instanceof Error ? error.message : 'Unable to sign out.');
+    }
+  }, []);
 
   return (
     <main className="app-shell">
@@ -171,8 +199,8 @@ export function App() {
         <AuthControl
           authState={authState}
           email={authSession?.email ?? null}
-          onSignIn={() => void signIn()}
-          onSignOut={() => void signOut()}
+          onSignIn={() => void handleSignIn()}
+          onSignOut={() => void handleSignOut()}
         />
       </section>
 
@@ -206,12 +234,8 @@ export function App() {
         ) : (
           <div className="empty-state">
             <Phone size={28} />
-            <h2>{isLoading ? 'Loading caller records' : 'No caller records found'}</h2>
-            <p>
-              {isLoading
-                ? 'Refreshing from the deployed API.'
-                : 'Try another search or invoke the Lambda.'}
-            </p>
+            <h2>{emptyState.title}</h2>
+            <p>{emptyState.description}</p>
           </div>
         )}
       </section>
@@ -279,7 +303,7 @@ function CallerRecordCard({ record }: { record: CallerRecord }) {
       <div className="record-card__header">
         <div>
           <span className="record-card__label">Caller</span>
-          <h2>{maskPhone(record.callerNumber)}</h2>
+          <h2>{record.callerNumberMasked}</h2>
         </div>
         <time dateTime={record.createdAt}>{formatTimestamp(record.createdAt)}</time>
       </div>
@@ -304,12 +328,7 @@ function CallerRecordCard({ record }: { record: CallerRecord }) {
 }
 
 function recordKey(record: CallerRecord): string {
-  return `${record.callerNumber}-${record.createdAt}`;
-}
-
-function maskPhone(phoneNumber: string): string {
-  const visibleDigits = phoneNumber.replace(/\D/g, '').slice(-4);
-  return `+*-***-***-${visibleDigits || '0000'}`;
+  return `${record.contactId ?? record.callerNumberMasked}-${record.createdAt}`;
 }
 
 function formatTimestamp(value: string): string {
@@ -353,4 +372,42 @@ function statusLabel(loadState: LoadState): string {
   }
 
   return 'Starting';
+}
+
+function getEmptyStateCopy(
+  authState: AuthState,
+  isLoading: boolean,
+): { title: string; description: string } {
+  if (isLoading) {
+    return {
+      title: 'Loading caller records',
+      description: 'Refreshing from the deployed API.',
+    };
+  }
+
+  if (authState === 'disabled') {
+    return {
+      title: 'Authentication is not configured',
+      description: 'Populate frontend/.env with the Cognito stack outputs.',
+    };
+  }
+
+  if (authState === 'signed-out') {
+    return {
+      title: 'Sign in required',
+      description: 'Authenticate with Cognito to load caller records.',
+    };
+  }
+
+  if (authState === 'error') {
+    return {
+      title: 'Authentication needs attention',
+      description: 'Check the Cognito settings and try signing in again.',
+    };
+  }
+
+  return {
+    title: 'No caller records found',
+    description: 'Try another search or invoke the Lambda.',
+  };
 }

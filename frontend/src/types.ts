@@ -1,5 +1,5 @@
 export interface CallerRecord {
-  callerNumber: string;
+  callerNumberMasked: string;
   createdAt: string;
   contactId?: string;
   vanityNumbers: string[];

@@ -6,7 +6,9 @@ import type {
 import { getConfig } from '../config/env';
 import type { CallerRepository } from '../repositories/callerRepository';
 import { DynamoDbCallerRepository } from '../repositories/callerRepository';
+import type { CallerRecord, CallerSummary } from '../types/callerRecord';
 import { log } from '../utils/logger';
+import { maskPhoneNumber } from '../utils/maskPhoneNumber';
 import { jsonResponse } from '../utils/response';
 
 const LATEST_CALLERS_LIMIT = 5;
@@ -22,7 +24,8 @@ export function createGetLastCallersHandler(repository?: CallerRepository) {
       const config = await getConfig();
       allowedOrigin = config.allowedOrigin;
       const callerRepository = repository ?? new DynamoDbCallerRepository(config.tableName);
-      const items = await callerRepository.getLatestCallerRecords(LATEST_CALLERS_LIMIT);
+      const records = await callerRepository.getLatestCallerRecords(LATEST_CALLERS_LIMIT);
+      const items = records.map(toCallerSummary);
 
       log('info', 'Fetched latest caller records.', {
         awsRequestId: context?.awsRequestId,
@@ -41,3 +44,19 @@ export function createGetLastCallersHandler(repository?: CallerRepository) {
 }
 
 export const handler = createGetLastCallersHandler();
+
+function toCallerSummary(record: CallerRecord): CallerSummary {
+  const baseSummary: CallerSummary = {
+    callerNumberMasked: maskPhoneNumber(record.callerNumber),
+    createdAt: record.createdAt,
+    vanityNumbers: record.vanityNumbers,
+    topThree: record.topThree,
+    recordType: record.recordType,
+  };
+
+  return {
+    ...baseSummary,
+    ...(record.contactId === undefined ? {} : { contactId: record.contactId }),
+    ...(record.ttl === undefined ? {} : { ttl: record.ttl }),
+  };
+}

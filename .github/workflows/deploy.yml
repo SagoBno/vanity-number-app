@@ -7,10 +7,18 @@ on:
         description: Deployment stage
         required: true
         default: dev
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
       region:
         description: AWS region
         required: true
         default: us-east-1
+        type: choice
+        options:
+          - us-east-1
       allowed_origin:
         description: Dashboard origin allowed by API Gateway CORS
         required: true
@@ -23,6 +31,10 @@ on:
         description: Cognito OAuth logout URL for the dashboard
         required: true
         default: http://localhost:5173/
+      connect_instance_arn:
+        description: Optional Amazon Connect instance ARN allowed to invoke the generation Lambda
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -32,6 +44,10 @@ jobs:
   deploy:
     name: Deploy SAM stack
     runs-on: ubuntu-latest
+    environment: ${{ inputs.stage }}
+    concurrency:
+      group: deploy-${{ inputs.stage }}-${{ inputs.region }}
+      cancel-in-progress: false
 
     steps:
       - name: Checkout
@@ -77,6 +93,40 @@ jobs:
           npm run format:check
           npm run sam:validate
 
+      - name: Validate deploy inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          validate_url() {
+            local name="$1"
+            local value="$2"
+
+            if [[ ! "$value" =~ ^https?://[^[:space:]\;\&\|\`\$]+$ ]]; then
+              echo "$name must be an http(s) URL without shell metacharacters."
+              exit 1
+            fi
+          }
+
+          [[ "${{ inputs.stage }}" =~ ^[a-z0-9-]+$ ]] || {
+            echo "stage must contain only lowercase letters, numbers, and hyphens."
+            exit 1
+          }
+
+          [[ "${{ inputs.region }}" == "us-east-1" ]] || {
+            echo "region must be us-east-1 for this workflow."
+            exit 1
+          }
+
+          validate_url "allowed_origin" "${{ inputs.allowed_origin }}"
+          validate_url "dashboard_callback_url" "${{ inputs.dashboard_callback_url }}"
+          validate_url "dashboard_logout_url" "${{ inputs.dashboard_logout_url }}"
+
+          if [[ -n "${{ inputs.connect_instance_arn }}" && ! "${{ inputs.connect_instance_arn }}" =~ ^arn:aws[-a-z0-9]*:connect:${{ inputs.region }}:[0-9]{12}:instance/[-a-zA-Z0-9]+$ ]]; then
+            echo "connect_instance_arn must be empty or a Connect instance ARN in the selected region."
+            exit 1
+          fi
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v5
         with:
@@ -87,17 +137,25 @@ jobs:
         run: npm run sam:build
 
       - name: Deploy SAM stack
-        run: >
-          sam deploy
-          --template-file .aws-sam/build/template.yaml
-          --stack-name vanity-number-app-${{ inputs.stage }}
-          --region ${{ inputs.region }}
-          --resolve-s3
-          --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM
-          --parameter-overrides
-          Stage=${{ inputs.stage }}
-          AllowedOrigin=${{ inputs.allowed_origin }}
-          DashboardCallbackUrl=${{ inputs.dashboard_callback_url }}
-          DashboardLogoutUrl=${{ inputs.dashboard_logout_url }}
-          --no-confirm-changeset
-          --no-fail-on-empty-changeset
+        env:
+          STAGE: ${{ inputs.stage }}
+          REGION: ${{ inputs.region }}
+          ALLOWED_ORIGIN: ${{ inputs.allowed_origin }}
+          DASHBOARD_CALLBACK_URL: ${{ inputs.dashboard_callback_url }}
+          DASHBOARD_LOGOUT_URL: ${{ inputs.dashboard_logout_url }}
+          CONNECT_INSTANCE_ARN: ${{ inputs.connect_instance_arn }}
+        run: |
+          sam deploy \
+            --template-file .aws-sam/build/template.yaml \
+            --stack-name "vanity-number-app-${STAGE}" \
+            --region "${REGION}" \
+            --resolve-s3 \
+            --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
+            --parameter-overrides \
+              Stage="${STAGE}" \
+              AllowedOrigin="${ALLOWED_ORIGIN}" \
+              DashboardCallbackUrl="${DASHBOARD_CALLBACK_URL}" \
+              DashboardLogoutUrl="${DASHBOARD_LOGOUT_URL}" \
+              ConnectInstanceArn="${CONNECT_INSTANCE_ARN}" \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset

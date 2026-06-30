@@ -36,9 +36,9 @@ flowchart TD
 
 1. Amazon Connect invokes the generation Lambda with the caller endpoint address.
 2. The Lambda normalizes the phone number and generates deterministic vanity candidates.
-3. The top five candidates are stored in DynamoDB with TTL and a GSI-friendly record type.
+3. The top five candidates are stored in DynamoDB with TTL, a GSI-friendly record type, and a `ContactId`-based idempotency key when available.
 4. The top three candidates are returned to Amazon Connect as external string attributes.
-5. The dashboard API reads recent records through `LatestCallersIndex`.
+5. The dashboard API reads recent records through `LatestCallersIndex` and returns masked caller numbers.
 6. The React dashboard signs in through Cognito and stores an OIDC access token client-side.
 7. The dashboard calls the API endpoint configured through `VITE_API_ENDPOINT` with a Bearer token.
 8. API Gateway validates the JWT before invoking `getLastCallers`.
