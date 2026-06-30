@@ -1,0 +1,137 @@
+{
+  "Version": "2019-10-30",
+  "StartAction": "Enable logging",
+  "Metadata": {
+    "EntryPointPosition": {
+      "x": 40,
+      "y": 160
+    },
+    "ActionMetadata": {
+      "Enable logging": {
+        "Position": {
+          "x": 220,
+          "y": 160
+        }
+      },
+      "Generate vanity numbers": {
+        "Position": {
+          "x": 460,
+          "y": 160
+        }
+      },
+      "Check generation result": {
+        "Position": {
+          "x": 720,
+          "y": 160
+        }
+      },
+      "Speak vanity numbers": {
+        "Position": {
+          "x": 980,
+          "y": 80
+        }
+      },
+      "Speak failure": {
+        "Position": {
+          "x": 980,
+          "y": 260
+        }
+      },
+      "Disconnect": {
+        "Position": {
+          "x": 1220,
+          "y": 160
+        }
+      }
+    }
+  },
+  "Actions": [
+    {
+      "Identifier": "Enable logging",
+      "Type": "UpdateFlowLoggingBehavior",
+      "Parameters": {
+        "LoggingBehavior": "Enabled"
+      },
+      "Transitions": {
+        "NextAction": "Generate vanity numbers",
+        "Errors": [],
+        "Conditions": []
+      }
+    },
+    {
+      "Identifier": "Generate vanity numbers",
+      "Type": "InvokeLambdaFunction",
+      "Parameters": {
+        "LambdaFunctionARN": "GENERATE_VANITY_NUMBERS_FUNCTION_ARN",
+        "InvocationTimeLimitSeconds": "8"
+      },
+      "Transitions": {
+        "NextAction": "Check generation result",
+        "Errors": [
+          {
+            "NextAction": "Speak failure",
+            "ErrorType": "NoMatchingError"
+          }
+        ],
+        "Conditions": []
+      }
+    },
+    {
+      "Identifier": "Check generation result",
+      "Type": "Compare",
+      "Parameters": {
+        "ComparisonValue": "$.External.success"
+      },
+      "Transitions": {
+        "NextAction": "Speak failure",
+        "Errors": [
+          {
+            "NextAction": "Speak failure",
+            "ErrorType": "NoMatchingCondition"
+          }
+        ],
+        "Conditions": [
+          {
+            "NextAction": "Speak vanity numbers",
+            "Condition": {
+              "Operator": "Equals",
+              "Operands": ["true"]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "Identifier": "Speak vanity numbers",
+      "Type": "MessageParticipant",
+      "Parameters": {
+        "Text": "Your top vanity numbers are $.External.vanity1, $.External.vanity2, and $.External.vanity3.",
+        "TextType": "text/plain"
+      },
+      "Transitions": {
+        "NextAction": "Disconnect",
+        "Errors": [],
+        "Conditions": []
+      }
+    },
+    {
+      "Identifier": "Speak failure",
+      "Type": "MessageParticipant",
+      "Parameters": {
+        "Text": "We were unable to generate vanity numbers for your phone number.",
+        "TextType": "text/plain"
+      },
+      "Transitions": {
+        "NextAction": "Disconnect",
+        "Errors": [],
+        "Conditions": []
+      }
+    },
+    {
+      "Identifier": "Disconnect",
+      "Type": "DisconnectParticipant",
+      "Parameters": {},
+      "Transitions": {}
+    }
+  ]
+}

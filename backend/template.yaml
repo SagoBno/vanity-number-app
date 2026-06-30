@@ -1,0 +1,337 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Production-oriented vanity number app for Amazon Connect, Lambda, DynamoDB, and API Gateway.
+
+Parameters:
+  Stage:
+    Type: String
+    Default: dev
+    AllowedPattern: '^[a-z0-9-]+$'
+    Description: Deployment stage used in resource names.
+
+  AllowedOrigin:
+    Type: String
+    Default: http://localhost:5173
+    Description: CORS origin allowed to call the dashboard API.
+
+  LogRetentionInDays:
+    Type: Number
+    Default: 30
+    AllowedValues: [1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365]
+    Description: CloudWatch Logs retention period.
+
+  TtlDays:
+    Type: Number
+    Default: 30
+    MinValue: 1
+    MaxValue: 365
+    Description: Number of days caller records are retained before DynamoDB TTL expiration.
+
+  MaxVanityCandidates:
+    Type: Number
+    Default: 1000
+    MinValue: 25
+    MaxValue: 5000
+    Description: Maximum generated vanity candidates per Lambda invocation.
+
+Globals:
+  Function:
+    Runtime: nodejs24.x
+    Architectures:
+      - arm64
+    Environment:
+      Variables:
+        CONFIG_PARAMETER_PATH: !Sub /vanity-number-app/${Stage}
+        TABLE_NAME: !Ref VanityNumbersTable
+
+Resources:
+  AllowedOriginParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /vanity-number-app/${Stage}/allowed-origin
+      Type: String
+      Value: !Ref AllowedOrigin
+      Description: CORS origin returned by the dashboard Lambda responses.
+      Tags:
+        Application: vanity-number-app
+        Stage: !Ref Stage
+
+  TtlDaysParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /vanity-number-app/${Stage}/ttl-days
+      Type: String
+      Value: !Ref TtlDays
+      Description: Number of days caller records are retained before DynamoDB TTL expiration.
+      Tags:
+        Application: vanity-number-app
+        Stage: !Ref Stage
+
+  MaxVanityCandidatesParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /vanity-number-app/${Stage}/max-vanity-candidates
+      Type: String
+      Value: !Ref MaxVanityCandidates
+      Description: Maximum generated vanity candidates per Lambda invocation.
+      Tags:
+        Application: vanity-number-app
+        Stage: !Ref Stage
+
+  VanityTableKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: !Sub KMS key for DynamoDB encryption at rest in ${AWS::StackName}.
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: EnableAccountAdministration
+            Effect: Allow
+            Principal:
+              AWS: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:root
+            Action: kms:*
+            Resource: '*'
+
+  VanityTableKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub alias/vanity-number-table-${Stage}
+      TargetKeyId: !Ref VanityTableKey
+
+  VanityNumbersTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      TableName: !Sub vanity-number-records-${Stage}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: callerNumber
+          AttributeType: S
+        - AttributeName: createdAt
+          AttributeType: S
+        - AttributeName: recordType
+          AttributeType: S
+      KeySchema:
+        - AttributeName: callerNumber
+          KeyType: HASH
+        - AttributeName: createdAt
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: LatestCallersIndex
+          KeySchema:
+            - AttributeName: recordType
+              KeyType: HASH
+            - AttributeName: createdAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+        KMSMasterKeyId: !GetAtt VanityTableKey.Arn
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+        - Key: Application
+          Value: vanity-number-app
+        - Key: Stage
+          Value: !Ref Stage
+
+  GenerateVanityNumbersLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/vanity-number-generate-${Stage}
+      RetentionInDays: !Ref LogRetentionInDays
+
+  GetLastCallersLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/vanity-number-get-last-callers-${Stage}
+      RetentionInDays: !Ref LogRetentionInDays
+
+  GenerateVanityNumbersRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: GenerateVanityNumbersLeastPrivilege
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: WriteLogs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/vanity-number-generate-${Stage}:*
+              - Sid: SaveCallerRecord
+                Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                Resource: !GetAtt VanityNumbersTable.Arn
+              - Sid: ReadRuntimeConfig
+                Effect: Allow
+                Action:
+                  - ssm:GetParametersByPath
+                Resource:
+                  - !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/vanity-number-app/${Stage}
+                  - !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/vanity-number-app/${Stage}/*
+              - Sid: UseDynamoDbTableKey
+                Effect: Allow
+                Action:
+                  - kms:Decrypt
+                  - kms:DescribeKey
+                  - kms:Encrypt
+                  - kms:GenerateDataKey
+                Resource: !GetAtt VanityTableKey.Arn
+
+  GetLastCallersRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: GetLastCallersLeastPrivilege
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: WriteLogs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/vanity-number-get-last-callers-${Stage}:*
+              - Sid: QueryLatestCallers
+                Effect: Allow
+                Action:
+                  - dynamodb:Query
+                Resource:
+                  - !GetAtt VanityNumbersTable.Arn
+                  - !Sub ${VanityNumbersTable.Arn}/index/LatestCallersIndex
+              - Sid: ReadRuntimeConfig
+                Effect: Allow
+                Action:
+                  - ssm:GetParametersByPath
+                Resource:
+                  - !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/vanity-number-app/${Stage}
+                  - !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/vanity-number-app/${Stage}/*
+              - Sid: UseDynamoDbTableKey
+                Effect: Allow
+                Action:
+                  - kms:Decrypt
+                  - kms:DescribeKey
+                  - kms:Encrypt
+                  - kms:GenerateDataKey
+                Resource: !GetAtt VanityTableKey.Arn
+
+  GenerateVanityNumbersFunction:
+    Type: AWS::Serverless::Function
+    DependsOn:
+      - GenerateVanityNumbersLogGroup
+    Properties:
+      FunctionName: !Sub vanity-number-generate-${Stage}
+      Description: Generates vanity numbers for Amazon Connect and stores caller records.
+      CodeUri: .
+      Handler: src/handlers/generateVanityNumbers.handler
+      Role: !GetAtt GenerateVanityNumbersRole.Arn
+      MemorySize: 256
+      Timeout: 5
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        EntryPoints:
+          - src/handlers/generateVanityNumbers.ts
+        Format: cjs
+        Minify: true
+        Sourcemap: false
+        Target: es2022
+
+  GetLastCallersFunction:
+    Type: AWS::Serverless::Function
+    DependsOn:
+      - GetLastCallersLogGroup
+    Properties:
+      FunctionName: !Sub vanity-number-get-last-callers-${Stage}
+      Description: Returns the latest caller records for the vanity dashboard.
+      CodeUri: .
+      Handler: src/handlers/getLastCallers.handler
+      Role: !GetAtt GetLastCallersRole.Arn
+      MemorySize: 128
+      Timeout: 3
+      Events:
+        GetLatestCallers:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref VanityHttpApi
+            Method: GET
+            Path: /callers/latest
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        EntryPoints:
+          - src/handlers/getLastCallers.ts
+        Format: cjs
+        Minify: true
+        Sourcemap: false
+        Target: es2022
+
+  VanityHttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: !Ref Stage
+      CorsConfiguration:
+        AllowHeaders:
+          - content-type
+          - x-requested-with
+        AllowMethods:
+          - GET
+          - OPTIONS
+        AllowOrigins:
+          - !Ref AllowedOrigin
+        MaxAge: 300
+
+  AllowAmazonConnectInvokeGenerateFunction:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref GenerateVanityNumbersFunction
+      Principal: connect.amazonaws.com
+      SourceAccount: !Ref AWS::AccountId
+      SourceArn: !Sub arn:${AWS::Partition}:connect:${AWS::Region}:${AWS::AccountId}:instance/*
+
+Outputs:
+  ApiEndpoint:
+    Description: HTTP API endpoint for the dashboard backend.
+    Value: !Sub https://${VanityHttpApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/${Stage}/callers/latest
+
+  GenerateVanityNumbersFunctionArn:
+    Description: Lambda ARN to associate with the Amazon Connect instance.
+    Value: !GetAtt GenerateVanityNumbersFunction.Arn
+
+  GetLastCallersFunctionArn:
+    Description: Lambda ARN used by API Gateway.
+    Value: !GetAtt GetLastCallersFunction.Arn
+
+  VanityNumbersTableName:
+    Description: DynamoDB table storing caller vanity records.
+    Value: !Ref VanityNumbersTable
+
+  LatestCallersIndexName:
+    Description: GSI used to query recent caller records efficiently.
+    Value: LatestCallersIndex

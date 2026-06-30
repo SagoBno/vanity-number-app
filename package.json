@@ -1,0 +1,31 @@
+{
+  "name": "vanity-number-app",
+  "version": "1.0.0",
+  "description": "Production-oriented AWS serverless vanity number application for Amazon Connect.",
+  "private": true,
+  "scripts": {
+    "backend:build": "npm --prefix backend run build",
+    "backend:test": "npm --prefix backend test",
+    "backend:typecheck": "npm --prefix backend run typecheck",
+    "build": "npm run backend:build",
+    "build:all": "npm run backend:build && npm run frontend:build",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "frontend:build": "npm --prefix frontend run build",
+    "frontend:dev": "npm --prefix frontend run dev",
+    "frontend:preview": "npm --prefix frontend run preview",
+    "frontend:typecheck": "npm --prefix frontend run typecheck",
+    "lint": "eslint .",
+    "sam:build": "SAM_BIN=$(command -v sam || printf .tools/bin/sam) && HOME=/tmp SAM_CLI_TELEMETRY=0 PATH=\"$PWD/backend/node_modules/.bin:$PATH\" \"$SAM_BIN\" build --template-file backend/template.yaml",
+    "sam:validate": "SAM_BIN=$(command -v sam || printf .tools/bin/sam) && HOME=/tmp SAM_CLI_TELEMETRY=0 \"$SAM_BIN\" validate --lint --template-file backend/template.yaml",
+    "test": "npm run backend:test",
+    "typecheck": "npm run backend:typecheck"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "eslint": "^10.5.0",
+    "prettier": "^3.8.4"
+  }
+}

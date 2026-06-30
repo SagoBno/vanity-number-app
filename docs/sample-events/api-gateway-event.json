@@ -1,0 +1,11 @@
+{
+  "version": "2.0",
+  "routeKey": "GET /callers/latest",
+  "rawPath": "/callers/latest",
+  "requestContext": {
+    "http": {
+      "method": "GET",
+      "path": "/callers/latest"
+    }
+  }
+}

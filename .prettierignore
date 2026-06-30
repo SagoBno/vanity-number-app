@@ -1,0 +1,11 @@
+node_modules/
+dist/
+coverage/
+backend/node_modules/
+backend/dist/
+backend/coverage/
+backend/.aws-sam/
+.aws-sam/
+aws/
+awscliv2.zip
+vanity-number-production-codex-context.md

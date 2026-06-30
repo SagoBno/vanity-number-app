@@ -1,0 +1,93 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      stage:
+        description: Deployment stage
+        required: true
+        default: dev
+      region:
+        description: AWS region
+        required: true
+        default: us-east-1
+      allowed_origin:
+        description: Dashboard origin allowed by API Gateway CORS
+        required: true
+        default: http://localhost:5173
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    name: Deploy SAM stack
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Install CloudFormation linter
+        run: pip install cfn-lint
+
+      - name: Set up SAM CLI
+        uses: aws-actions/setup-sam@v2
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install backend dependencies
+        run: npm ci --prefix backend
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
+
+      - name: Run quality gate
+        run: |
+          npm test
+          npm run typecheck
+          npm run frontend:typecheck
+          npm run build:all
+          npm run lint
+          npm run format:check
+          npm run sam:validate
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          aws-region: ${{ inputs.region }}
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+
+      - name: Build SAM application
+        run: npm run sam:build
+
+      - name: Deploy SAM stack
+        run: >
+          sam deploy
+          --template-file .aws-sam/build/template.yaml
+          --stack-name vanity-number-app-${{ inputs.stage }}
+          --region ${{ inputs.region }}
+          --resolve-s3
+          --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM
+          --parameter-overrides
+          Stage=${{ inputs.stage }}
+          AllowedOrigin=${{ inputs.allowed_origin }}
+          --no-confirm-changeset
+          --no-fail-on-empty-changeset
