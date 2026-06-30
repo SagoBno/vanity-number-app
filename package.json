@@ -9,6 +9,7 @@
     "backend:typecheck": "npm --prefix backend run typecheck",
     "build": "npm run backend:build",
     "build:all": "npm run backend:build && npm run frontend:build",
+    "deploy:dev": "node scripts/deploy-dev.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "frontend:build": "npm --prefix frontend run build",
@@ -20,6 +21,7 @@
     "lint": "eslint .",
     "sam:build": "SAM_BIN=$(command -v sam || printf .tools/bin/sam) && HOME=/tmp SAM_CLI_TELEMETRY=0 PATH=\"$PWD/backend/node_modules/.bin:$PATH\" \"$SAM_BIN\" build --template-file backend/template.yaml",
     "sam:validate": "SAM_BIN=$(command -v sam || printf .tools/bin/sam) && HOME=/tmp SAM_CLI_TELEMETRY=0 \"$SAM_BIN\" validate --lint --template-file backend/template.yaml",
+    "setup": "node scripts/setup.mjs",
     "test": "npm run backend:test",
     "typecheck": "npm run backend:typecheck"
   },

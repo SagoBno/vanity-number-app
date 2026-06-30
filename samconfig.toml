@@ -1,0 +1,18 @@
+version = 0.1
+
+[dev.validate.parameters]
+template_file = "backend/template.yaml"
+lint = true
+
+[dev.build.parameters]
+template_file = "backend/template.yaml"
+
+[dev.deploy.parameters]
+template_file = ".aws-sam/build/template.yaml"
+stack_name = "vanity-number-app-dev"
+region = "us-east-1"
+resolve_s3 = true
+capabilities = "CAPABILITY_IAM CAPABILITY_NAMED_IAM"
+confirm_changeset = false
+fail_on_empty_changeset = false
+parameter_overrides = "ParameterKey=Stage,ParameterValue=dev ParameterKey=TtlDays,ParameterValue=30 ParameterKey=MaxVanityCandidates,ParameterValue=1000"

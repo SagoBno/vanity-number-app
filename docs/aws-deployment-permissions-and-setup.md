@@ -306,7 +306,42 @@ For production, split this into narrower policies. In particular, scope `iam:Pas
 }
 ```
 
-## Deploy Commands
+## Reviewer Deploy Path
+
+After AWS credentials are configured with the deployment policy above, a reviewer can deploy the application with two project commands:
+
+```bash
+npm run setup
+npm run deploy:dev
+```
+
+`npm run setup` installs root, backend, and frontend dependencies. `npm run deploy:dev` validates and builds the SAM application, deploys the backend and hosting infrastructure, builds the dashboard, generates `frontend/dist/config.js` from CloudFormation outputs, uploads `frontend/dist` to S3, invalidates CloudFront, and prints `DashboardUrl`.
+
+The deploy command defaults to:
+
+```txt
+Stack:  vanity-number-app-dev
+Region: us-east-1
+Stage:  dev
+TTL:    30 days
+Max vanity candidates: 1000
+```
+
+Override defaults only when needed:
+
+```bash
+STACK_NAME=vanity-number-app-staging \
+STAGE=staging \
+AWS_REGION=us-east-1 \
+CONNECT_INSTANCE_ARN=arn:aws:connect:us-east-1:123456789012:instance/00000000-0000-0000-0000-000000000000 \
+npm run deploy:dev
+```
+
+Leave `ALLOWED_ORIGIN`, `DASHBOARD_CALLBACK_URL`, and `DASHBOARD_LOGOUT_URL` unset to use the generated CloudFront dashboard URL. Set them only for local `localhost:5173` dashboard testing.
+
+## Manual Deploy Commands
+
+The one-command deploy path above is the recommended reviewer flow. Use the commands below for debugging or for environments that cannot run the Node wrapper script.
 
 Use this order for a fresh dev deployment:
 
@@ -437,26 +472,18 @@ The repository includes two workflows:
 - `.github/workflows/ci.yml` runs tests, type checks, backend/frontend builds, formatting checks, SAM validation, and SAM build.
 - `.github/workflows/deploy.yml` is a manual `workflow_dispatch` deployment that assumes an AWS role through GitHub OIDC.
 
-The deploy workflow expects this repository secret:
+### Set Up GitHub Actions In Your Repository
+
+1. Push the repository to GitHub with the `.github/workflows/ci.yml` and `.github/workflows/deploy.yml` files committed.
+2. In GitHub, open `Settings` -> `Environments` and create a `dev` environment. Add protection rules if you want manual approval before deployment.
+3. In AWS IAM, create an OIDC identity provider if your account does not already have one:
 
 ```txt
-AWS_DEPLOY_ROLE_ARN
+Provider URL: https://token.actions.githubusercontent.com
+Audience:     sts.amazonaws.com
 ```
 
-Manual deploy inputs:
-
-| Workflow input           | SAM parameter          | Local default | Notes                                                              |
-| ------------------------ | ---------------------- | ------------- | ------------------------------------------------------------------ |
-| `stage`                  | `Stage`                | `dev`         | Used in stack and resource names.                                  |
-| `region`                 | AWS region             | `us-east-1`   | Must match the Connect/Lambda region.                              |
-| `allowed_origin`         | `AllowedOrigin`        | empty         | Leave empty for CloudFront; use origin only for local testing.     |
-| `dashboard_callback_url` | `DashboardCallbackUrl` | empty         | Leave empty for CloudFront; must exactly match local redirect URL. |
-| `dashboard_logout_url`   | `DashboardLogoutUrl`   | empty         | Leave empty for CloudFront; must exactly match local logout URL.   |
-| `connect_instance_arn`   | `ConnectInstanceArn`   | empty         | Optional; scopes Lambda invoke permission to one Connect instance. |
-
-Leave the three dashboard URL inputs empty in GitHub Actions to use the generated CloudFront URL. Fill them only when deploying specifically for local `localhost:5173` testing.
-
-The role trust policy should allow the repository to assume the role through `token.actions.githubusercontent.com`. A typical trust policy shape is:
+4. Create an IAM role for GitHub Actions to assume. The role trust policy should allow only this repository and environment to assume the role:
 
 ```json
 {
@@ -470,9 +497,7 @@ The role trust policy should allow the repository to assume the role through `to
       "Action": "sts:AssumeRoleWithWebIdentity",
       "Condition": {
         "StringEquals": {
-          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
-        },
-        "StringLike": {
+          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
           "token.actions.githubusercontent.com:sub": "repo:OWNER/REPO:environment:dev"
         }
       }
@@ -481,7 +506,33 @@ The role trust policy should allow the repository to assume the role through `to
 }
 ```
 
-Attach the deployment policy above, or a narrower production equivalent, to the OIDC role.
+Replace `ACCOUNT_ID`, `OWNER`, and `REPO`. If you deploy `staging` or `prod`, create matching GitHub environments and add their `sub` values, or create separate IAM roles per environment.
+
+5. Attach the deployment policy from this document to the IAM role.
+6. Copy the role ARN.
+7. In GitHub, open `Settings` -> `Secrets and variables` -> `Actions` and create this repository secret:
+
+```txt
+AWS_DEPLOY_ROLE_ARN
+```
+
+8. Go to `Actions` -> `CI` to confirm the validation workflow runs on pull requests and pushes to `main`.
+9. Go to `Actions` -> `Deploy` -> `Run workflow`.
+10. Choose `dev` and `us-east-1`. Leave `allowed_origin`, `dashboard_callback_url`, and `dashboard_logout_url` empty for CloudFront hosting. Leave `connect_instance_arn` empty until Amazon Connect is available.
+11. After the workflow finishes, open the GitHub Actions run summary. It prints `DashboardUrl`, `ApiEndpoint`, Cognito IDs, and demo-user creation commands.
+
+Manual deploy inputs:
+
+| Workflow input           | SAM parameter          | Local default | Notes                                                              |
+| ------------------------ | ---------------------- | ------------- | ------------------------------------------------------------------ |
+| `stage`                  | `Stage`                | `dev`         | Used in stack and resource names.                                  |
+| `region`                 | AWS region             | `us-east-1`   | Must match the Connect/Lambda region.                              |
+| `allowed_origin`         | `AllowedOrigin`        | empty         | Leave empty for CloudFront; use origin only for local testing.     |
+| `dashboard_callback_url` | `DashboardCallbackUrl` | empty         | Leave empty for CloudFront; must exactly match local redirect URL. |
+| `dashboard_logout_url`   | `DashboardLogoutUrl`   | empty         | Leave empty for CloudFront; must exactly match local logout URL.   |
+| `connect_instance_arn`   | `ConnectInstanceArn`   | empty         | Optional; scopes Lambda invoke permission to one Connect instance. |
+
+Leave the three dashboard URL inputs empty in GitHub Actions to use the generated CloudFront URL. Fill them only when deploying specifically for local `localhost:5173` testing.
 
 ## Validated Deployment
 
@@ -509,3 +560,5 @@ If Amazon Connect was configured, also release any claimed phone numbers and rem
 - `sam deploy`: https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-cli-command-reference-sam-deploy.html
 - CloudFormation IAM actions: https://docs.aws.amazon.com/service-authorization/latest/reference/list_awscloudformation.html
 - Amazon Connect Lambda integration: https://docs.aws.amazon.com/connect/latest/adminguide/connect-lambda-functions.html
+- GitHub Actions OIDC with AWS: https://docs.github.com/en/actions/how-tos/security-for-github-actions/security-hardening-your-deployments/configuring-openid-connect-in-amazon-web-services
+- AWS IAM OIDC providers: https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_create_oidc.html

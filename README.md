@@ -120,9 +120,7 @@ package.json            Root orchestration scripts
 Install dependencies:
 
 ```bash
-npm install
-npm install --prefix backend
-npm install --prefix frontend
+npm run setup
 ```
 
 Run the local quality checks:
@@ -150,19 +148,24 @@ For local development, the dashboard reads the API endpoint and Cognito settings
 
 ## Deployment
 
-The application is deployed with AWS SAM:
+For a reviewer-friendly deployment, configure AWS credentials with the documented deployment permissions, then run:
 
 ```bash
-npm run sam:validate
-npm run sam:build
-sam deploy --template-file .aws-sam/build/template.yaml --guided
+npm run setup
+npm run deploy:dev
 ```
 
-Publish the hosted dashboard after the stack is deployed:
+`deploy:dev` validates the SAM template, builds the backend, deploys the stack, builds the React dashboard, writes the runtime `config.js`, uploads the dashboard to S3, invalidates CloudFront, and prints the deployed dashboard URL.
 
-```bash
-npm run frontend:publish
+The defaults are:
+
+```txt
+Stack:  vanity-number-app-dev
+Region: us-east-1
+Stage:  dev
 ```
+
+Override them with environment variables such as `STACK_NAME`, `AWS_REGION`, `STAGE`, and `CONNECT_INSTANCE_ARN` when needed.
 
 For the IAM deployment policy, AWS account setup, and non-interactive deploy command, see:
 
@@ -187,6 +190,10 @@ For the runtime and deployment diagrams, see:
 For reusable pre-commit review prompts, see:
 
 [docs/agents/README.md](docs/agents/README.md)
+
+For implementation rationale, challenges, production shortcuts, and future improvements, see:
+
+[docs/project-notes.md](docs/project-notes.md)
 
 ## Infrastructure
 
