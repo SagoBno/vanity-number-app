@@ -1,6 +1,7 @@
 import type { LatestCallersResponse } from './types';
+import { runtimeConfig } from './runtimeConfig';
 
-export const defaultApiEndpoint = import.meta.env.VITE_API_ENDPOINT as string | undefined;
+export const defaultApiEndpoint = runtimeConfig.apiEndpoint;
 
 export async function fetchLatestCallers(
   apiEndpoint: string,

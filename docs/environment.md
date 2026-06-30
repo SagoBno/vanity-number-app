@@ -4,7 +4,7 @@ The project has three configuration contexts:
 
 - Backend Lambda runtime configuration is stored in AWS Systems Manager Parameter Store.
 - Backend Lambda infrastructure references are configured by AWS SAM in `backend/template.yaml`.
-- Frontend variables are configured by Vite in `frontend/.env`.
+- Frontend variables are configured by Vite in `frontend/.env` for local development and by runtime `config.js` for the hosted dashboard.
 
 `.env.example` files are examples only. They are not loaded automatically.
 
@@ -35,7 +35,10 @@ AllowedOriginParameter:
   Properties:
     Name: !Sub /vanity-number-app/${Stage}/allowed-origin
     Type: String
-    Value: !Ref AllowedOrigin
+    Value: !If
+      - HasAllowedOrigin
+      - !Ref AllowedOrigin
+      - !Sub https://${DashboardDistribution.DomainName}
 ```
 
 Change deployed config through SAM parameters:
@@ -49,13 +52,11 @@ sam deploy \
   --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
   --parameter-overrides \
     Stage=dev \
-    AllowedOrigin=http://localhost:5173 \
-    DashboardCallbackUrl=http://localhost:5173/ \
-    DashboardLogoutUrl=http://localhost:5173/ \
-    ConnectInstanceArn= \
     TtlDays=30 \
     MaxVanityCandidates=1000
 ```
+
+Leave `AllowedOrigin`, `DashboardCallbackUrl`, and `DashboardLogoutUrl` unset to use the hosted CloudFront dashboard. Add the localhost values only for local frontend testing.
 
 For local shell execution, export variables manually or copy `backend/.env.example` to `backend/.env` and load it with a shell helper. The TypeScript backend does not include `dotenv`.
 
@@ -80,9 +81,9 @@ Use this split:
 | Secrets requiring rotation/audit   | AWS Secrets Manager       |
 | CloudFormation resource references | SAM environment variables |
 
-## Frontend
+## Frontend Local Development
 
-The frontend reads variables through Vite:
+The local frontend reads variables through Vite:
 
 | Variable                     | Used By                | Purpose                         |
 | ---------------------------- | ---------------------- | ------------------------------- |
@@ -117,3 +118,18 @@ npm run frontend:dev
 ```
 
 Only variables prefixed with `VITE_` are exposed to frontend code.
+
+## Frontend AWS Hosting
+
+The hosted CloudFront dashboard reads `/config.js` at runtime. Generate it from CloudFormation outputs after `sam deploy`:
+
+```bash
+API_ENDPOINT=<ApiEndpoint>
+COGNITO_AUTHORITY=<DashboardCognitoAuthority>
+COGNITO_HOSTED_UI_URL=<DashboardCognitoHostedUiUrl>
+COGNITO_CLIENT_ID=<DashboardUserPoolClientId>
+DASHBOARD_URL=<DashboardUrl>
+npm run frontend:write-config
+```
+
+The generated file is written to `frontend/dist/config.js` and is uploaded to the dashboard S3 bucket with the rest of `frontend/dist`.

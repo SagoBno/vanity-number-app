@@ -20,17 +20,17 @@ on:
         options:
           - us-east-1
       allowed_origin:
-        description: Dashboard origin allowed by API Gateway CORS
-        required: true
-        default: http://localhost:5173
+        description: Optional dashboard origin allowed by API Gateway CORS. Leave empty to use CloudFront.
+        required: false
+        default: ''
       dashboard_callback_url:
-        description: Cognito OAuth callback URL for the dashboard
-        required: true
-        default: http://localhost:5173/
+        description: Optional Cognito OAuth callback URL for local dashboard testing
+        required: false
+        default: ''
       dashboard_logout_url:
-        description: Cognito OAuth logout URL for the dashboard
-        required: true
-        default: http://localhost:5173/
+        description: Optional Cognito OAuth logout URL for local dashboard testing
+        required: false
+        default: ''
       connect_instance_arn:
         description: Optional Amazon Connect instance ARN allowed to invoke the generation Lambda
         required: false
@@ -118,9 +118,17 @@ jobs:
             exit 1
           }
 
-          validate_url "allowed_origin" "${{ inputs.allowed_origin }}"
-          validate_url "dashboard_callback_url" "${{ inputs.dashboard_callback_url }}"
-          validate_url "dashboard_logout_url" "${{ inputs.dashboard_logout_url }}"
+          if [[ -n "${{ inputs.allowed_origin }}" ]]; then
+            validate_url "allowed_origin" "${{ inputs.allowed_origin }}"
+          fi
+
+          if [[ -n "${{ inputs.dashboard_callback_url }}" ]]; then
+            validate_url "dashboard_callback_url" "${{ inputs.dashboard_callback_url }}"
+          fi
+
+          if [[ -n "${{ inputs.dashboard_logout_url }}" ]]; then
+            validate_url "dashboard_logout_url" "${{ inputs.dashboard_logout_url }}"
+          fi
 
           if [[ -n "${{ inputs.connect_instance_arn }}" && ! "${{ inputs.connect_instance_arn }}" =~ ^arn:aws[-a-z0-9]*:connect:${{ inputs.region }}:[0-9]{12}:instance/[-a-zA-Z0-9]+$ ]]; then
             echo "connect_instance_arn must be empty or a Connect instance ARN in the selected region."
@@ -145,17 +153,117 @@ jobs:
           DASHBOARD_LOGOUT_URL: ${{ inputs.dashboard_logout_url }}
           CONNECT_INSTANCE_ARN: ${{ inputs.connect_instance_arn }}
         run: |
+          set -euo pipefail
+
+          parameter_overrides=(
+            "Stage=${STAGE}"
+          )
+
+          if [[ -n "${ALLOWED_ORIGIN}" ]]; then
+            parameter_overrides+=("AllowedOrigin=${ALLOWED_ORIGIN}")
+          fi
+
+          if [[ -n "${DASHBOARD_CALLBACK_URL}" ]]; then
+            parameter_overrides+=("DashboardCallbackUrl=${DASHBOARD_CALLBACK_URL}")
+          fi
+
+          if [[ -n "${DASHBOARD_LOGOUT_URL}" ]]; then
+            parameter_overrides+=("DashboardLogoutUrl=${DASHBOARD_LOGOUT_URL}")
+          fi
+
+          if [[ -n "${CONNECT_INSTANCE_ARN}" ]]; then
+            parameter_overrides+=("ConnectInstanceArn=${CONNECT_INSTANCE_ARN}")
+          fi
+
           sam deploy \
             --template-file .aws-sam/build/template.yaml \
             --stack-name "vanity-number-app-${STAGE}" \
             --region "${REGION}" \
             --resolve-s3 \
             --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
-            --parameter-overrides \
-              Stage="${STAGE}" \
-              AllowedOrigin="${ALLOWED_ORIGIN}" \
-              DashboardCallbackUrl="${DASHBOARD_CALLBACK_URL}" \
-              DashboardLogoutUrl="${DASHBOARD_LOGOUT_URL}" \
-              ConnectInstanceArn="${CONNECT_INSTANCE_ARN}" \
+            --parameter-overrides "${parameter_overrides[@]}" \
             --no-confirm-changeset \
             --no-fail-on-empty-changeset
+
+      - name: Read stack outputs
+        id: stack-outputs
+        env:
+          STAGE: ${{ inputs.stage }}
+          REGION: ${{ inputs.region }}
+        run: |
+          set -euo pipefail
+
+          output() {
+            aws cloudformation describe-stacks \
+              --stack-name "vanity-number-app-${STAGE}" \
+              --region "${REGION}" \
+              --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue" \
+              --output text
+          }
+
+          {
+            echo "api_endpoint=$(output ApiEndpoint)"
+            echo "dashboard_bucket=$(output DashboardBucketName)"
+            echo "dashboard_distribution_id=$(output DashboardDistributionId)"
+            echo "dashboard_url=$(output DashboardUrl)"
+            echo "user_pool_id=$(output DashboardUserPoolId)"
+            echo "cognito_authority=$(output DashboardCognitoAuthority)"
+            echo "cognito_hosted_ui_url=$(output DashboardCognitoHostedUiUrl)"
+            echo "cognito_client_id=$(output DashboardUserPoolClientId)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Write dashboard runtime config
+        env:
+          API_ENDPOINT: ${{ steps.stack-outputs.outputs.api_endpoint }}
+          COGNITO_AUTHORITY: ${{ steps.stack-outputs.outputs.cognito_authority }}
+          COGNITO_HOSTED_UI_URL: ${{ steps.stack-outputs.outputs.cognito_hosted_ui_url }}
+          COGNITO_CLIENT_ID: ${{ steps.stack-outputs.outputs.cognito_client_id }}
+          DASHBOARD_URL: ${{ steps.stack-outputs.outputs.dashboard_url }}
+        run: npm run frontend:write-config
+
+      - name: Publish dashboard assets
+        env:
+          DASHBOARD_BUCKET: ${{ steps.stack-outputs.outputs.dashboard_bucket }}
+          REGION: ${{ inputs.region }}
+        run: aws s3 sync frontend/dist "s3://${DASHBOARD_BUCKET}" --delete --region "${REGION}"
+
+      - name: Invalidate dashboard cache
+        env:
+          DASHBOARD_DISTRIBUTION_ID: ${{ steps.stack-outputs.outputs.dashboard_distribution_id }}
+        run: aws cloudfront create-invalidation --distribution-id "${DASHBOARD_DISTRIBUTION_ID}" --paths "/*"
+
+      - name: Write deployment summary
+        env:
+          API_ENDPOINT: ${{ steps.stack-outputs.outputs.api_endpoint }}
+          DASHBOARD_URL: ${{ steps.stack-outputs.outputs.dashboard_url }}
+          USER_POOL_ID: ${{ steps.stack-outputs.outputs.user_pool_id }}
+          COGNITO_CLIENT_ID: ${{ steps.stack-outputs.outputs.cognito_client_id }}
+          REGION: ${{ inputs.region }}
+        run: |
+          {
+            echo "## Vanity Number App deployment"
+            echo ""
+            echo "| Output | Value |"
+            echo "| --- | --- |"
+            echo "| DashboardUrl | ${DASHBOARD_URL} |"
+            echo "| ApiEndpoint | ${API_ENDPOINT} |"
+            echo "| Cognito User Pool | ${USER_POOL_ID} |"
+            echo "| Cognito Client | ${COGNITO_CLIENT_ID} |"
+            echo ""
+            echo "### Create a demo user"
+            echo ""
+            echo '```bash'
+            echo "aws cognito-idp admin-create-user \\"
+            echo "  --user-pool-id ${USER_POOL_ID} \\"
+            echo "  --username reviewer@example.com \\"
+            echo "  --user-attributes Name=email,Value=reviewer@example.com Name=email_verified,Value=true \\"
+            echo "  --region ${REGION}"
+            echo ""
+            echo "aws cognito-idp admin-set-user-password \\"
+            echo "  --user-pool-id ${USER_POOL_ID} \\"
+            echo "  --username reviewer@example.com \\"
+            echo "  --password 'Replace-With-A-Strong-Password-123!' \\"
+            echo "  --permanent \\"
+            echo "  --region ${REGION}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -11,18 +11,18 @@ Parameters:
 
   AllowedOrigin:
     Type: String
-    Default: http://localhost:5173
-    Description: CORS origin allowed to call the dashboard API.
+    Default: ''
+    Description: Optional CORS origin allowed to call the dashboard API. Defaults to the CloudFront dashboard origin.
 
   DashboardCallbackUrl:
     Type: String
-    Default: http://localhost:5173/
-    Description: OAuth callback URL for the React dashboard.
+    Default: ''
+    Description: Optional OAuth callback URL for local dashboard testing. The CloudFront dashboard URL is always allowed.
 
   DashboardLogoutUrl:
     Type: String
-    Default: http://localhost:5173/
-    Description: OAuth logout URL for the React dashboard.
+    Default: ''
+    Description: Optional OAuth logout URL for local dashboard testing. The CloudFront dashboard URL is always allowed.
 
   ConnectInstanceArn:
     Type: String
@@ -61,9 +61,148 @@ Globals:
         TABLE_NAME: !Ref VanityNumbersTable
 
 Conditions:
+  HasAllowedOrigin: !Not [!Equals [!Ref AllowedOrigin, '']]
   HasConnectInstanceArn: !Not [!Equals [!Ref ConnectInstanceArn, '']]
+  HasDashboardCallbackUrl: !Not [!Equals [!Ref DashboardCallbackUrl, '']]
+  HasDashboardLogoutUrl: !Not [!Equals [!Ref DashboardLogoutUrl, '']]
 
 Resources:
+  DashboardBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub vanity-number-dashboard-${AWS::AccountId}-${Stage}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Application
+          Value: vanity-number-app
+        - Key: Stage
+          Value: !Ref Stage
+
+  DashboardOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub vanity-number-dashboard-${Stage}
+        Description: !Sub CloudFront access to the private vanity dashboard bucket for ${Stage}.
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  DashboardAssetsCachePolicy:
+    Type: AWS::CloudFront::CachePolicy
+    Properties:
+      CachePolicyConfig:
+        Name: !Sub vanity-number-dashboard-assets-${Stage}
+        DefaultTTL: 86400
+        MaxTTL: 31536000
+        MinTTL: 0
+        ParametersInCacheKeyAndForwardedToOrigin:
+          CookiesConfig:
+            CookieBehavior: none
+          EnableAcceptEncodingBrotli: true
+          EnableAcceptEncodingGzip: true
+          HeadersConfig:
+            HeaderBehavior: none
+          QueryStringsConfig:
+            QueryStringBehavior: none
+
+  DashboardNoCachePolicy:
+    Type: AWS::CloudFront::CachePolicy
+    Properties:
+      CachePolicyConfig:
+        Name: !Sub vanity-number-dashboard-config-${Stage}
+        DefaultTTL: 0
+        MaxTTL: 0
+        MinTTL: 0
+        ParametersInCacheKeyAndForwardedToOrigin:
+          CookiesConfig:
+            CookieBehavior: none
+          EnableAcceptEncodingBrotli: false
+          EnableAcceptEncodingGzip: false
+          HeadersConfig:
+            HeaderBehavior: none
+          QueryStringsConfig:
+            QueryStringBehavior: none
+
+  DashboardDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Comment: !Sub Vanity Number dashboard ${Stage}
+        DefaultRootObject: index.html
+        Enabled: true
+        HttpVersion: http2and3
+        IPV6Enabled: true
+        Origins:
+          - Id: DashboardS3Origin
+            DomainName: !GetAtt DashboardBucket.RegionalDomainName
+            OriginAccessControlId: !Ref DashboardOriginAccessControl
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+        DefaultCacheBehavior:
+          TargetOriginId: DashboardS3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          CachedMethods:
+            - GET
+            - HEAD
+          CachePolicyId: !Ref DashboardAssetsCachePolicy
+          Compress: true
+        CacheBehaviors:
+          - PathPattern: config.js
+            TargetOriginId: DashboardS3Origin
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+            CachedMethods:
+              - GET
+              - HEAD
+            CachePolicyId: !Ref DashboardNoCachePolicy
+            Compress: true
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+        PriceClass: PriceClass_100
+      Tags:
+        - Key: Application
+          Value: vanity-number-app
+        - Key: Stage
+          Value: !Ref Stage
+
+  DashboardBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref DashboardBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowCloudFrontRead
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub ${DashboardBucket.Arn}/*
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${DashboardDistribution}
+
   DashboardUserPool:
     Type: AWS::Cognito::UserPool
     Properties:
@@ -102,9 +241,11 @@ Resources:
         - openid
         - profile
       CallbackURLs:
-        - !Ref DashboardCallbackUrl
+        - !Sub https://${DashboardDistribution.DomainName}/
+        - !If [HasDashboardCallbackUrl, !Ref DashboardCallbackUrl, !Ref AWS::NoValue]
       LogoutURLs:
-        - !Ref DashboardLogoutUrl
+        - !Sub https://${DashboardDistribution.DomainName}/
+        - !If [HasDashboardLogoutUrl, !Ref DashboardLogoutUrl, !Ref AWS::NoValue]
       SupportedIdentityProviders:
         - COGNITO
       AccessTokenValidity: 1
@@ -126,7 +267,10 @@ Resources:
     Properties:
       Name: !Sub /vanity-number-app/${Stage}/allowed-origin
       Type: String
-      Value: !Ref AllowedOrigin
+      Value: !If
+        - HasAllowedOrigin
+        - !Ref AllowedOrigin
+        - !Sub https://${DashboardDistribution.DomainName}
       Description: CORS origin returned by the dashboard Lambda responses.
       Tags:
         Application: vanity-number-app
@@ -388,7 +532,10 @@ Resources:
           - GET
           - OPTIONS
         AllowOrigins:
-          - !Ref AllowedOrigin
+          - !If
+            - HasAllowedOrigin
+            - !Ref AllowedOrigin
+            - !Sub https://${DashboardDistribution.DomainName}
         MaxAge: 300
 
   AllowAmazonConnectInvokeGenerateFunction:
@@ -407,6 +554,18 @@ Outputs:
   ApiEndpoint:
     Description: HTTP API endpoint for the dashboard backend.
     Value: !Sub https://${VanityHttpApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/${Stage}/callers/latest
+
+  DashboardBucketName:
+    Description: S3 bucket that stores the built dashboard assets.
+    Value: !Ref DashboardBucket
+
+  DashboardDistributionId:
+    Description: CloudFront distribution ID for the dashboard.
+    Value: !Ref DashboardDistribution
+
+  DashboardUrl:
+    Description: CloudFront URL for the hosted dashboard.
+    Value: !Sub https://${DashboardDistribution.DomainName}/
 
   GenerateVanityNumbersFunctionArn:
     Description: Lambda ARN to associate with the Amazon Connect instance.

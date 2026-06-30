@@ -61,7 +61,7 @@ export function App() {
 
     if (authState === 'disabled') {
       setLoadState('idle');
-      setErrorMessage('Configure Cognito settings in frontend/.env to load caller records.');
+      setErrorMessage('Configure Cognito settings in frontend/.env or hosted config.js.');
       return;
     }
 
@@ -388,7 +388,7 @@ function getEmptyStateCopy(
   if (authState === 'disabled') {
     return {
       title: 'Authentication is not configured',
-      description: 'Populate frontend/.env with the Cognito stack outputs.',
+      description: 'Populate frontend/.env locally or upload hosted config.js from stack outputs.',
     };
   }
 

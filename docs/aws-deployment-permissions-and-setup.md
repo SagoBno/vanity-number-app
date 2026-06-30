@@ -6,7 +6,7 @@ This guide describes the AWS setup required to deploy the Vanity Number App with
 
 The project uses two permission layers:
 
-- **Deployment permissions**: permissions used by the IAM principal running `sam deploy`. These permissions create and update CloudFormation, Lambda, DynamoDB, API Gateway, IAM, KMS, SSM Parameter Store, CloudWatch Logs, and S3 deployment artifacts.
+- **Deployment permissions**: permissions used by the IAM principal running `sam deploy`. These permissions create and update CloudFormation, Lambda, DynamoDB, API Gateway, IAM, KMS, SSM Parameter Store, CloudWatch Logs, S3 deployment artifacts, and S3/CloudFront dashboard hosting resources.
 - **Runtime permissions**: permissions used by the deployed Lambda functions. These are defined in `backend/template.yaml` and are scoped to the resources each function needs.
 
 The Lambda runtime roles are intentionally narrower than the deployment role:
@@ -105,6 +105,34 @@ For production, split this into narrower policies. In particular, scope `iam:Pas
         "s3:DeleteBucketPolicy",
         "s3:TagResource",
         "s3:UntagResource"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ManageDashboardCloudFront",
+      "Effect": "Allow",
+      "Action": [
+        "cloudfront:CreateDistribution",
+        "cloudfront:UpdateDistribution",
+        "cloudfront:DeleteDistribution",
+        "cloudfront:GetDistribution",
+        "cloudfront:GetDistributionConfig",
+        "cloudfront:ListDistributions",
+        "cloudfront:CreateInvalidation",
+        "cloudfront:GetInvalidation",
+        "cloudfront:ListInvalidations",
+        "cloudfront:CreateOriginAccessControl",
+        "cloudfront:UpdateOriginAccessControl",
+        "cloudfront:DeleteOriginAccessControl",
+        "cloudfront:GetOriginAccessControl",
+        "cloudfront:ListOriginAccessControls",
+        "cloudfront:CreateCachePolicy",
+        "cloudfront:UpdateCachePolicy",
+        "cloudfront:DeleteCachePolicy",
+        "cloudfront:GetCachePolicy",
+        "cloudfront:GetCachePolicyConfig",
+        "cloudfront:TagResource",
+        "cloudfront:UntagResource"
       ],
       "Resource": "*"
     },
@@ -280,6 +308,30 @@ For production, split this into narrower policies. In particular, scope `iam:Pas
 
 ## Deploy Commands
 
+Use this order for a fresh dev deployment:
+
+```bash
+npm run sam:validate
+npm run sam:build
+
+.tools/bin/sam deploy \
+  --template-file .aws-sam/build/template.yaml \
+  --stack-name vanity-number-app-dev \
+  --region us-east-1 \
+  --resolve-s3 \
+  --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
+  --parameter-overrides \
+    Stage=dev \
+    TtlDays=30 \
+    MaxVanityCandidates=1000 \
+  --no-confirm-changeset \
+  --no-fail-on-empty-changeset
+
+npm run frontend:publish
+```
+
+The final command builds the React dashboard, generates `frontend/dist/config.js` from the deployed stack outputs, uploads `frontend/dist` to S3, invalidates CloudFront, and prints `DashboardUrl`.
+
 Validate and build:
 
 ```bash
@@ -298,20 +350,27 @@ sam deploy \
   --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
   --parameter-overrides \
     Stage=dev \
-    AllowedOrigin=http://localhost:5173 \
-    DashboardCallbackUrl=http://localhost:5173/ \
-    DashboardLogoutUrl=http://localhost:5173/ \
-    ConnectInstanceArn= \
     TtlDays=30 \
     MaxVanityCandidates=1000 \
   --no-confirm-changeset \
   --no-fail-on-empty-changeset
 ```
 
+Leave `AllowedOrigin`, `DashboardCallbackUrl`, and `DashboardLogoutUrl` unset to use the generated CloudFront dashboard URL. For local `localhost:5173` testing, add:
+
+```txt
+AllowedOrigin=http://localhost:5173
+DashboardCallbackUrl=http://localhost:5173/
+DashboardLogoutUrl=http://localhost:5173/
+```
+
 The deployment outputs include:
 
 ```txt
 ApiEndpoint
+DashboardBucketName
+DashboardDistributionId
+DashboardUrl
 GenerateVanityNumbersFunctionArn
 GetLastCallersFunctionArn
 VanityNumbersTableName
@@ -322,7 +381,54 @@ DashboardCognitoAuthority
 DashboardCognitoHostedUiUrl
 ```
 
-If you already know the Amazon Connect instance, pass its ARN through `ConnectInstanceArn` to scope Lambda invocation permission to that instance. Leave it empty for early sandbox deployments before Connect is configured.
+If you already know the Amazon Connect instance, pass its ARN through `ConnectInstanceArn` to scope Lambda invocation permission to that instance. Omit the parameter for early sandbox deployments before Connect is configured.
+
+Build and publish the dashboard after the stack is deployed:
+
+```bash
+npm run frontend:publish
+```
+
+By default, this reads outputs from:
+
+```txt
+Stack:  vanity-number-app-dev
+Region: us-east-1
+```
+
+Override those defaults if needed:
+
+```bash
+STACK_NAME=vanity-number-app-staging AWS_REGION=us-east-1 npm run frontend:publish
+```
+
+The script builds the frontend, generates `frontend/dist/config.js`, syncs `frontend/dist` to the dashboard S3 bucket, invalidates CloudFront, and prints `DashboardUrl`.
+
+Equivalent manual commands:
+
+```bash
+npm run frontend:build
+
+API_ENDPOINT=$(aws cloudformation describe-stacks --stack-name vanity-number-app-dev --region us-east-1 --query "Stacks[0].Outputs[?OutputKey=='ApiEndpoint'].OutputValue" --output text)
+DASHBOARD_BUCKET=$(aws cloudformation describe-stacks --stack-name vanity-number-app-dev --region us-east-1 --query "Stacks[0].Outputs[?OutputKey=='DashboardBucketName'].OutputValue" --output text)
+DASHBOARD_DISTRIBUTION_ID=$(aws cloudformation describe-stacks --stack-name vanity-number-app-dev --region us-east-1 --query "Stacks[0].Outputs[?OutputKey=='DashboardDistributionId'].OutputValue" --output text)
+DASHBOARD_URL=$(aws cloudformation describe-stacks --stack-name vanity-number-app-dev --region us-east-1 --query "Stacks[0].Outputs[?OutputKey=='DashboardUrl'].OutputValue" --output text)
+COGNITO_AUTHORITY=$(aws cloudformation describe-stacks --stack-name vanity-number-app-dev --region us-east-1 --query "Stacks[0].Outputs[?OutputKey=='DashboardCognitoAuthority'].OutputValue" --output text)
+COGNITO_HOSTED_UI_URL=$(aws cloudformation describe-stacks --stack-name vanity-number-app-dev --region us-east-1 --query "Stacks[0].Outputs[?OutputKey=='DashboardCognitoHostedUiUrl'].OutputValue" --output text)
+COGNITO_CLIENT_ID=$(aws cloudformation describe-stacks --stack-name vanity-number-app-dev --region us-east-1 --query "Stacks[0].Outputs[?OutputKey=='DashboardUserPoolClientId'].OutputValue" --output text)
+
+API_ENDPOINT="$API_ENDPOINT" \
+COGNITO_AUTHORITY="$COGNITO_AUTHORITY" \
+COGNITO_HOSTED_UI_URL="$COGNITO_HOSTED_UI_URL" \
+COGNITO_CLIENT_ID="$COGNITO_CLIENT_ID" \
+DASHBOARD_URL="$DASHBOARD_URL" \
+npm run frontend:write-config
+
+aws s3 sync frontend/dist "s3://$DASHBOARD_BUCKET" --delete --region us-east-1
+aws cloudfront create-invalidation --distribution-id "$DASHBOARD_DISTRIBUTION_ID" --paths "/*"
+```
+
+Open `DashboardUrl` after CloudFront finishes deploying.
 
 ## GitHub Actions
 
@@ -339,14 +445,16 @@ AWS_DEPLOY_ROLE_ARN
 
 Manual deploy inputs:
 
-| Workflow input           | SAM parameter          | Local default            | Notes                                                              |
-| ------------------------ | ---------------------- | ------------------------ | ------------------------------------------------------------------ |
-| `stage`                  | `Stage`                | `dev`                    | Used in stack and resource names.                                  |
-| `region`                 | AWS region             | `us-east-1`              | Must match the Connect/Lambda region.                              |
-| `allowed_origin`         | `AllowedOrigin`        | `http://localhost:5173`  | Origin only; no trailing slash.                                    |
-| `dashboard_callback_url` | `DashboardCallbackUrl` | `http://localhost:5173/` | Must exactly match the Cognito redirect URL.                       |
-| `dashboard_logout_url`   | `DashboardLogoutUrl`   | `http://localhost:5173/` | Must exactly match the Cognito logout URL.                         |
-| `connect_instance_arn`   | `ConnectInstanceArn`   | empty                    | Optional; scopes Lambda invoke permission to one Connect instance. |
+| Workflow input           | SAM parameter          | Local default | Notes                                                              |
+| ------------------------ | ---------------------- | ------------- | ------------------------------------------------------------------ |
+| `stage`                  | `Stage`                | `dev`         | Used in stack and resource names.                                  |
+| `region`                 | AWS region             | `us-east-1`   | Must match the Connect/Lambda region.                              |
+| `allowed_origin`         | `AllowedOrigin`        | empty         | Leave empty for CloudFront; use origin only for local testing.     |
+| `dashboard_callback_url` | `DashboardCallbackUrl` | empty         | Leave empty for CloudFront; must exactly match local redirect URL. |
+| `dashboard_logout_url`   | `DashboardLogoutUrl`   | empty         | Leave empty for CloudFront; must exactly match local logout URL.   |
+| `connect_instance_arn`   | `ConnectInstanceArn`   | empty         | Optional; scopes Lambda invoke permission to one Connect instance. |
+
+Leave the three dashboard URL inputs empty in GitHub Actions to use the generated CloudFront URL. Fill them only when deploying specifically for local `localhost:5173` testing.
 
 The role trust policy should allow the repository to assume the role through `token.actions.githubusercontent.com`. A typical trust policy shape is:
 

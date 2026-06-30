@@ -1,0 +1,1 @@
+window.VANITY_NUMBER_CONFIG = {};

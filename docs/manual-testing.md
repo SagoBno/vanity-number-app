@@ -29,6 +29,9 @@ Expected outputs:
 
 ```txt
 ApiEndpoint
+DashboardBucketName
+DashboardDistributionId
+DashboardUrl
 GenerateVanityNumbersFunctionArn
 GetLastCallersFunctionArn
 VanityNumbersTableName
@@ -139,12 +142,18 @@ aws logs tail /aws/lambda/vanity-number-get-last-callers-dev \
 
 Logs are structured JSON and should not contain full unmasked phone numbers.
 
-## 7. Optional Dashboard Check
+## 7. Dashboard Check
 
-Run the React dashboard locally:
+Open the hosted dashboard from the stack output:
 
 ```bash
-npm run frontend:dev
+aws cloudformation describe-stacks \
+  --stack-name vanity-number-app-dev \
+  --region us-east-1 \
+  --query "Stacks[0].Outputs[?OutputKey=='DashboardUrl'].OutputValue" \
+  --output text
 ```
 
-Open the Vite URL, sign in through Cognito, and confirm that the API endpoint field points to the deployed `ApiEndpoint` output. The dashboard should show the record generated in step 3 after refresh.
+Sign in through Cognito and refresh the dashboard. The dashboard should show the record generated in step 3 after refresh.
+
+For local dashboard testing instead, redeploy with localhost callback/logout/CORS parameters, run `npm run frontend:dev`, and open `http://localhost:5173/`.

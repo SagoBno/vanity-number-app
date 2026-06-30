@@ -31,13 +31,20 @@ Relevant outputs:
 
 ```txt
 ApiEndpoint
+DashboardUrl
 DashboardUserPoolId
 DashboardUserPoolClientId
 DashboardCognitoAuthority
 DashboardCognitoHostedUiUrl
 ```
 
-## Frontend Configuration
+## Hosted Dashboard Configuration
+
+The SAM stack provisions a CloudFront dashboard URL and automatically allows it as a Cognito callback/logout URL. The deployed frontend reads `config.js`, which should be generated from stack outputs and uploaded with the frontend build.
+
+Use `DashboardUrl` to open the hosted dashboard.
+
+## Local Frontend Configuration
 
 Create a local frontend env file:
 
@@ -56,7 +63,7 @@ VITE_COGNITO_REDIRECT_URI=http://localhost:5173/
 VITE_COGNITO_LOGOUT_URI=http://localhost:5173/
 ```
 
-The redirect and logout URLs must match the `DashboardCallbackUrl` and `DashboardLogoutUrl` SAM parameters exactly.
+For local testing, redeploy with `AllowedOrigin=http://localhost:5173`, `DashboardCallbackUrl=http://localhost:5173/`, and `DashboardLogoutUrl=http://localhost:5173/`. The redirect and logout URLs must match those SAM parameters exactly.
 
 ## Create A Demo User
 

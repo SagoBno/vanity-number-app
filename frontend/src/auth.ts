@@ -1,4 +1,5 @@
 import { UserManager, type User, type UserManagerSettings } from 'oidc-client-ts';
+import { runtimeConfig } from './runtimeConfig';
 
 export interface AuthConfig {
   authority: string;
@@ -13,11 +14,11 @@ export interface AuthSession {
   email: string | null;
 }
 
-const authority = import.meta.env.VITE_COGNITO_AUTHORITY as string | undefined;
-const hostedUiUrl = import.meta.env.VITE_COGNITO_HOSTED_UI_URL as string | undefined;
-const clientId = import.meta.env.VITE_COGNITO_CLIENT_ID as string | undefined;
-const redirectUri = import.meta.env.VITE_COGNITO_REDIRECT_URI as string | undefined;
-const logoutUri = import.meta.env.VITE_COGNITO_LOGOUT_URI as string | undefined;
+const authority = runtimeConfig.cognitoAuthority;
+const hostedUiUrl = runtimeConfig.cognitoHostedUiUrl;
+const clientId = runtimeConfig.cognitoClientId;
+const redirectUri = runtimeConfig.cognitoRedirectUri;
+const logoutUri = runtimeConfig.cognitoLogoutUri;
 
 export const authConfig = readAuthConfig();
 const userManager = authConfig === null ? null : new UserManager(toUserManagerSettings(authConfig));

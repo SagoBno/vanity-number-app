@@ -15,6 +15,7 @@ The application receives a caller phone number from Amazon Connect, generates ra
 - Unit and handler tests with Jest.
 - Deployment and manual testing documentation.
 - React/Vite dashboard for recent caller records.
+- S3 + CloudFront hosting for the dashboard frontend.
 - GitHub Actions CI and manual SAM deployment workflow.
 - Optional Amazon Connect contact flow deployment artifacts.
 
@@ -145,7 +146,7 @@ Run the dashboard locally:
 npm run frontend:dev
 ```
 
-The dashboard reads the API endpoint from `frontend/.env` / `VITE_API_ENDPOINT` and can also be pointed at a deployed endpoint in the browser.
+For local development, the dashboard reads the API endpoint and Cognito settings from `frontend/.env` / `VITE_*` variables. In AWS hosting, the deployed dashboard reads `config.js`, which is generated from CloudFormation outputs and uploaded with the built assets.
 
 ## Deployment
 
@@ -155,6 +156,12 @@ The application is deployed with AWS SAM:
 npm run sam:validate
 npm run sam:build
 sam deploy --template-file .aws-sam/build/template.yaml --guided
+```
+
+Publish the hosted dashboard after the stack is deployed:
+
+```bash
+npm run frontend:publish
 ```
 
 For the IAM deployment policy, AWS account setup, and non-interactive deploy command, see:
@@ -185,6 +192,8 @@ For reusable pre-commit review prompts, see:
 
 The SAM template provisions:
 
+- Private S3 bucket for dashboard assets.
+- CloudFront distribution with Origin Access Control for the dashboard.
 - DynamoDB table using on-demand billing.
 - GSI `LatestCallersIndex` for efficient latest-caller queries.
 - TTL for automatic record expiration.
@@ -203,7 +212,7 @@ Reserved concurrency is documented as a production control, but it is not enable
 GitHub Actions provides:
 
 - PR/push validation with tests, type checks, formatting, SAM validation, and SAM build.
-- Manual OIDC-based deployment through `.github/workflows/deploy.yml`.
+- Manual OIDC-based deployment through `.github/workflows/deploy.yml`, including SAM deploy, dashboard config generation, S3 asset upload, and CloudFront invalidation.
 
 Amazon Connect artifacts provide:
 
