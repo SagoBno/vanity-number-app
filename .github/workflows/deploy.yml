@@ -15,6 +15,14 @@ on:
         description: Dashboard origin allowed by API Gateway CORS
         required: true
         default: http://localhost:5173
+      dashboard_callback_url:
+        description: Cognito OAuth callback URL for the dashboard
+        required: true
+        default: http://localhost:5173/
+      dashboard_logout_url:
+        description: Cognito OAuth logout URL for the dashboard
+        required: true
+        default: http://localhost:5173/
 
 permissions:
   contents: read
@@ -89,5 +97,7 @@ jobs:
           --parameter-overrides
           Stage=${{ inputs.stage }}
           AllowedOrigin=${{ inputs.allowed_origin }}
+          DashboardCallbackUrl=${{ inputs.dashboard_callback_url }}
+          DashboardLogoutUrl=${{ inputs.dashboard_logout_url }}
           --no-confirm-changeset
           --no-fail-on-empty-changeset

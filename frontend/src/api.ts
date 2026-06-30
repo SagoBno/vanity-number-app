@@ -2,11 +2,20 @@ import type { LatestCallersResponse } from './types';
 
 export const defaultApiEndpoint = import.meta.env.VITE_API_ENDPOINT as string | undefined;
 
-export async function fetchLatestCallers(apiEndpoint: string): Promise<LatestCallersResponse> {
+export async function fetchLatestCallers(
+  apiEndpoint: string,
+  accessToken?: string,
+): Promise<LatestCallersResponse> {
+  const headers: HeadersInit = {
+    Accept: 'application/json',
+  };
+
+  if (accessToken !== undefined) {
+    headers.Authorization = `Bearer ${accessToken}`;
+  }
+
   const response = await fetch(apiEndpoint, {
-    headers: {
-      Accept: 'application/json',
-    },
+    headers,
   });
 
   if (!response.ok) {

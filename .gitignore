@@ -18,3 +18,4 @@ vanity-number-production-codex-context.md
 !backend/.env.example
 npm-debug.log*
 .DS_Store
+.agents

@@ -1,0 +1,179 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Optional Amazon Connect resources for the vanity number contact flow.
+
+Parameters:
+  ConnectInstanceArn:
+    Type: String
+    AllowedPattern: '^arn:aws[-a-z0-9]*:connect:[-a-z0-9]*:[0-9]{12}:instance/[-a-zA-Z0-9]*$'
+    Description: ARN of the Amazon Connect instance.
+
+  GenerateVanityNumbersFunctionArn:
+    Type: String
+    AllowedPattern: '^arn:aws[-a-z0-9]*:lambda:[-a-z0-9]*:[0-9]{12}:function:[a-zA-Z0-9-_]+$'
+    Description: ARN of the deployed generateVanityNumbers Lambda function.
+
+Resources:
+  VanityLambdaIntegration:
+    Type: AWS::Connect::IntegrationAssociation
+    Properties:
+      InstanceId: !Ref ConnectInstanceArn
+      IntegrationType: LAMBDA_FUNCTION
+      IntegrationArn: !Ref GenerateVanityNumbersFunctionArn
+
+  VanityNumberContactFlow:
+    Type: AWS::Connect::ContactFlow
+    DependsOn:
+      - VanityLambdaIntegration
+    Properties:
+      InstanceArn: !Ref ConnectInstanceArn
+      Name: Vanity Number Generator
+      Type: CONTACT_FLOW
+      State: ACTIVE
+      Description: Invokes the vanity number Lambda and speaks the top three generated candidates.
+      Content: !Sub |
+        {
+          "Version": "2019-10-30",
+          "StartAction": "Enable logging",
+          "Metadata": {
+            "EntryPointPosition": {
+              "x": 40,
+              "y": 160
+            },
+            "ActionMetadata": {
+              "Enable logging": {
+                "Position": {
+                  "x": 220,
+                  "y": 160
+                }
+              },
+              "Generate vanity numbers": {
+                "Position": {
+                  "x": 460,
+                  "y": 160
+                }
+              },
+              "Check generation result": {
+                "Position": {
+                  "x": 720,
+                  "y": 160
+                }
+              },
+              "Speak vanity numbers": {
+                "Position": {
+                  "x": 980,
+                  "y": 80
+                }
+              },
+              "Speak failure": {
+                "Position": {
+                  "x": 980,
+                  "y": 260
+                }
+              },
+              "Disconnect": {
+                "Position": {
+                  "x": 1220,
+                  "y": 160
+                }
+              }
+            }
+          },
+          "Actions": [
+            {
+              "Identifier": "Enable logging",
+              "Type": "UpdateFlowLoggingBehavior",
+              "Parameters": {
+                "LoggingBehavior": "Enabled"
+              },
+              "Transitions": {
+                "NextAction": "Generate vanity numbers",
+                "Errors": [],
+                "Conditions": []
+              }
+            },
+            {
+              "Identifier": "Generate vanity numbers",
+              "Type": "InvokeLambdaFunction",
+              "Parameters": {
+                "LambdaFunctionARN": "${GenerateVanityNumbersFunctionArn}",
+                "InvocationTimeLimitSeconds": "8"
+              },
+              "Transitions": {
+                "NextAction": "Check generation result",
+                "Errors": [
+                  {
+                    "NextAction": "Speak failure",
+                    "ErrorType": "NoMatchingError"
+                  }
+                ],
+                "Conditions": []
+              }
+            },
+            {
+              "Identifier": "Check generation result",
+              "Type": "Compare",
+              "Parameters": {
+                "ComparisonValue": "$.External.success"
+              },
+              "Transitions": {
+                "NextAction": "Speak failure",
+                "Errors": [
+                  {
+                    "NextAction": "Speak failure",
+                    "ErrorType": "NoMatchingCondition"
+                  }
+                ],
+                "Conditions": [
+                  {
+                    "NextAction": "Speak vanity numbers",
+                    "Condition": {
+                      "Operator": "Equals",
+                      "Operands": ["true"]
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "Identifier": "Speak vanity numbers",
+              "Type": "MessageParticipant",
+              "Parameters": {
+                "Text": "Your top vanity numbers are $.External.vanity1, $.External.vanity2, and $.External.vanity3.",
+                "TextType": "text/plain"
+              },
+              "Transitions": {
+                "NextAction": "Disconnect",
+                "Errors": [],
+                "Conditions": []
+              }
+            },
+            {
+              "Identifier": "Speak failure",
+              "Type": "MessageParticipant",
+              "Parameters": {
+                "Text": "We were unable to generate vanity numbers for your phone number.",
+                "TextType": "text/plain"
+              },
+              "Transitions": {
+                "NextAction": "Disconnect",
+                "Errors": [],
+                "Conditions": []
+              }
+            },
+            {
+              "Identifier": "Disconnect",
+              "Type": "DisconnectParticipant",
+              "Parameters": {},
+              "Transitions": {}
+            }
+          ]
+        }
+
+Outputs:
+  ContactFlowArn:
+    Description: ARN of the created Amazon Connect contact flow.
+    Value: !GetAtt VanityNumberContactFlow.ContactFlowArn
+
+  LambdaIntegrationAssociationId:
+    Description: Amazon Connect integration association identifier.
+    Value: !GetAtt VanityLambdaIntegration.IntegrationAssociationId

@@ -1,0 +1,261 @@
+# Vanity Number App
+
+Production-oriented AWS serverless implementation for the Amazon Connect vanity number assignment.
+
+The application receives a caller phone number from Amazon Connect, generates ranked vanity number candidates, stores the best results in DynamoDB, and exposes the latest caller records through an HTTP API for a dashboard or reviewer-facing client.
+
+## Implemented Scope
+
+- `generateVanityNumbers` Lambda for Amazon Connect.
+- `getLastCallers` Lambda behind API Gateway HTTP API.
+- Cognito/JWT authentication for the dashboard API.
+- DynamoDB persistence with GSI-backed latest-caller reads.
+- TypeScript domain logic for phone normalization, keypad conversion, candidate scoring, and PII masking.
+- AWS SAM infrastructure as code.
+- Unit and handler tests with Jest.
+- Deployment and manual testing documentation.
+- React/Vite dashboard for recent caller records.
+- GitHub Actions CI and manual SAM deployment workflow.
+- Optional Amazon Connect contact flow deployment artifacts.
+
+## Architecture
+
+```mermaid
+flowchart TD
+    Caller[Caller] --> ConnectNumber[Amazon Connect Phone Number]
+    ConnectNumber --> ContactFlow[Amazon Connect Contact Flow]
+    ContactFlow --> GenerateLambda[generateVanityNumbers Lambda]
+    GenerateLambda --> DynamoDB[(DynamoDB VanityNumbers Table)]
+    GenerateLambda --> ContactFlow
+    ContactFlow --> Speak[Connect speaks top 3 vanity numbers]
+
+    Reviewer[Reviewer / Dashboard] --> ApiGateway[API Gateway HTTP API]
+    ApiGateway --> GetLastCallers[getLastCallers Lambda]
+    GetLastCallers --> DynamoDB
+```
+
+## Application Flow
+
+1. Amazon Connect invokes `generateVanityNumbers`.
+2. The Lambda extracts `Details.ContactData.CustomerEndpoint.Address`.
+3. The phone number is normalized and validated.
+4. The last seven digits are converted into vanity candidates.
+5. Candidates are scored deterministically.
+6. The top five vanity numbers are stored in DynamoDB.
+7. The top three are returned to Amazon Connect as string attributes.
+8. `GET /callers/latest` returns the latest caller records for a dashboard.
+
+## Vanity Algorithm
+
+Telephone keypad mapping:
+
+```txt
+2 = ABC
+3 = DEF
+4 = GHI
+5 = JKL
+6 = MNO
+7 = PQRS
+8 = TUV
+9 = WXYZ
+0 = 0
+1 = 1
+```
+
+The algorithm focuses on the last seven digits of the phone number because those are typically the most memorable portion. It first checks a local common-word list, then generates a capped deterministic candidate set to avoid unbounded combinatorial work.
+
+Candidates score higher when they:
+
+- match a known local word, such as `FLOWERS`;
+- contain a balanced number of vowels;
+- avoid long repeated letter runs;
+- convert the complete seven-digit vanity segment;
+- avoid rare letters unless needed.
+
+The algorithm does not call external services, which keeps the Lambda deterministic, inexpensive, and reliable.
+
+Example:
+
+```txt
+Input:  +18003569377
+Output: +1-800-FLOWERS
+```
+
+## Repository Structure
+
+```txt
+backend/
+  src/
+    config/            Shared constants and environment configuration
+    data/              Local word list used by the scoring algorithm
+    handlers/          Lambda handlers
+    repositories/      DynamoDB access layer
+    services/          Vanity generation and scoring services
+    types/             Shared TypeScript types
+    utils/             Phone normalization, masking, logging, API responses
+  tests/               Unit and handler tests
+  template.yaml        AWS SAM infrastructure
+  package.json         Backend dependencies and scripts
+
+frontend/
+  src/                 React dashboard source
+  package.json         Frontend dependencies and scripts
+
+docs/
+  amazon-connect/       Optional contact flow content and Connect CloudFormation template
+  amazon-connect-setup.md
+  architecture.md
+  aws-deployment-permissions-and-setup.md
+  manual-testing.md
+  sample-events/
+
+.github/workflows/      CI and manual deployment workflows
+
+package.json            Root orchestration scripts
+```
+
+## Local Development
+
+Install dependencies:
+
+```bash
+npm install
+npm install --prefix backend
+npm install --prefix frontend
+```
+
+Run the local quality checks:
+
+```bash
+npm test
+npm run typecheck
+npm run build
+npm run frontend:typecheck
+npm run frontend:build
+npm run lint
+npm run format:check
+npm run sam:validate
+```
+
+Environment variables are documented in [docs/environment.md](docs/environment.md). No real `.env` file should be committed.
+
+Run the dashboard locally:
+
+```bash
+npm run frontend:dev
+```
+
+The dashboard reads the API endpoint from `frontend/.env` / `VITE_API_ENDPOINT` and can also be pointed at a deployed endpoint in the browser.
+
+## Deployment
+
+The application is deployed with AWS SAM:
+
+```bash
+npm run sam:validate
+npm run sam:build
+sam deploy --template-file .aws-sam/build/template.yaml --guided
+```
+
+For the IAM deployment policy, AWS account setup, and non-interactive deploy command, see:
+
+[docs/aws-deployment-permissions-and-setup.md](docs/aws-deployment-permissions-and-setup.md)
+
+For manual post-deploy verification, see:
+
+[docs/manual-testing.md](docs/manual-testing.md)
+
+For dashboard authentication, see:
+
+[docs/authentication.md](docs/authentication.md)
+
+For Amazon Connect configuration, see:
+
+[docs/amazon-connect-setup.md](docs/amazon-connect-setup.md)
+
+For the runtime and deployment diagrams, see:
+
+[docs/architecture.md](docs/architecture.md)
+
+For reusable pre-commit review prompts, see:
+
+[docs/agents/README.md](docs/agents/README.md)
+
+## Infrastructure
+
+The SAM template provisions:
+
+- DynamoDB table using on-demand billing.
+- GSI `LatestCallersIndex` for efficient latest-caller queries.
+- TTL for automatic record expiration.
+- Point-in-Time Recovery for DynamoDB.
+- Customer-managed KMS key for DynamoDB encryption.
+- SSM Parameter Store for runtime configuration.
+- Lambda functions using Node.js 24 on ARM64.
+- Explicit Lambda memory and timeout configuration.
+- CloudWatch log groups with finite retention.
+- API Gateway HTTP API with restrictive CORS.
+- Cognito User Pool and JWT authorizer for the dashboard API.
+- Least-privilege Lambda execution roles.
+
+Reserved concurrency is documented as a production control, but it is not enabled by default because new sandbox AWS accounts can have low Lambda concurrency quotas.
+
+GitHub Actions provides:
+
+- PR/push validation with tests, type checks, formatting, SAM validation, and SAM build.
+- Manual OIDC-based deployment through `.github/workflows/deploy.yml`.
+
+Amazon Connect artifacts provide:
+
+- Reference flow content at `docs/amazon-connect/contact-flow-content.json`.
+- Optional CloudFormation resources at `docs/amazon-connect/connect-resources.template.yaml`.
+
+## Security And Privacy
+
+- Phone numbers are treated as PII.
+- Logs use masked phone numbers.
+- DynamoDB records include TTL to limit retention.
+- The table is encrypted at rest with KMS.
+- Runtime configuration is loaded from SSM Parameter Store.
+- Runtime Lambda roles are scoped to the table, GSI, KMS key, and log groups they require.
+- The Lambdas are not placed in a VPC, avoiding unnecessary NAT Gateway cost and operational complexity.
+- Secrets are not stored in the repository.
+
+Production hardening options:
+
+- Require MFA for dashboard users.
+- Hash or tokenize the phone number used as a partition key.
+- Add CloudWatch alarms for Lambda errors, throttles, and DynamoDB failures.
+- Add custom metrics for successful generations, validation errors, and persistence errors.
+
+## Cost Awareness
+
+The architecture uses managed, pay-per-use services:
+
+- Lambda for compute.
+- API Gateway HTTP API for the dashboard backend.
+- DynamoDB on-demand for low or unpredictable traffic.
+- CloudWatch Logs with explicit retention.
+- TTL to reduce long-term storage of PII records.
+
+Costs intentionally accepted for production posture:
+
+- KMS key for data protection.
+- DynamoDB PITR for recovery.
+- Amazon Connect phone number and call charges for live call testing.
+
+## Cleanup
+
+Delete the deployed SAM stack:
+
+```bash
+sam delete --stack-name vanity-number-app-dev --region us-east-1
+```
+
+Also release any Amazon Connect phone numbers that are no longer needed, because claimed numbers and call minutes can continue to generate charges.
+
+## Known Limitations
+
+- Dashboard authentication is implemented with Cognito, but MFA is not enforced by default.
+- Amazon Connect live call testing requires a claimed number and can incur charges.
+- The current vanity scoring is deterministic and explainable, but intentionally lightweight.

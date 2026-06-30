@@ -93,7 +93,7 @@ h1 {
 
 .control-strip {
   display: grid;
-  grid-template-columns: minmax(240px, 1.5fr) minmax(220px, 1fr) auto;
+  grid-template-columns: minmax(240px, 1.5fr) minmax(220px, 1fr) auto auto;
   gap: 12px;
   align-items: end;
   padding: 14px;
@@ -170,6 +170,26 @@ h1 {
 .icon-button:disabled {
   cursor: wait;
   opacity: 0.72;
+}
+
+.icon-button--secondary {
+  border: 1px solid #cbd5df;
+  background: #ffffff;
+  color: #22303d;
+}
+
+.auth-status {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #cbd5df;
+  border-radius: 6px;
+  padding: 0 14px;
+  color: #526271;
+  font-size: 0.9rem;
+  font-weight: 800;
+  white-space: nowrap;
 }
 
 .metrics-grid {

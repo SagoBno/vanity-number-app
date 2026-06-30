@@ -14,6 +14,16 @@ Parameters:
     Default: http://localhost:5173
     Description: CORS origin allowed to call the dashboard API.
 
+  DashboardCallbackUrl:
+    Type: String
+    Default: http://localhost:5173/
+    Description: OAuth callback URL for the React dashboard.
+
+  DashboardLogoutUrl:
+    Type: String
+    Default: http://localhost:5173/
+    Description: OAuth logout URL for the React dashboard.
+
   LogRetentionInDays:
     Type: Number
     Default: 30
@@ -45,6 +55,63 @@ Globals:
         TABLE_NAME: !Ref VanityNumbersTable
 
 Resources:
+  DashboardUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub vanity-number-dashboard-${Stage}
+      UsernameAttributes:
+        - email
+      AutoVerifiedAttributes:
+        - email
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true
+      MfaConfiguration: 'OFF'
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 12
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+          RequireUppercase: true
+          TemporaryPasswordValidityDays: 7
+      UserPoolTags:
+        Application: vanity-number-app
+        Stage: !Ref Stage
+
+  DashboardUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub vanity-number-dashboard-${Stage}
+      UserPoolId: !Ref DashboardUserPool
+      GenerateSecret: false
+      PreventUserExistenceErrors: ENABLED
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows:
+        - code
+      AllowedOAuthScopes:
+        - email
+        - openid
+        - profile
+      CallbackURLs:
+        - !Ref DashboardCallbackUrl
+      LogoutURLs:
+        - !Ref DashboardLogoutUrl
+      SupportedIdentityProviders:
+        - COGNITO
+      AccessTokenValidity: 1
+      IdTokenValidity: 1
+      RefreshTokenValidity: 1
+      TokenValidityUnits:
+        AccessToken: hours
+        IdToken: hours
+        RefreshToken: days
+
+  DashboardUserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Sub vanity-number-${AWS::AccountId}-${Stage}
+      UserPoolId: !Ref DashboardUserPool
+
   AllowedOriginParameter:
     Type: AWS::SSM::Parameter
     Properties:
@@ -281,6 +348,8 @@ Resources:
             ApiId: !Ref VanityHttpApi
             Method: GET
             Path: /callers/latest
+            Auth:
+              Authorizer: DashboardJwtAuthorizer
     Metadata:
       BuildMethod: esbuild
       BuildProperties:
@@ -295,8 +364,17 @@ Resources:
     Type: AWS::Serverless::HttpApi
     Properties:
       StageName: !Ref Stage
+      Auth:
+        Authorizers:
+          DashboardJwtAuthorizer:
+            IdentitySource: $request.header.Authorization
+            JwtConfiguration:
+              issuer: !Sub https://cognito-idp.${AWS::Region}.${AWS::URLSuffix}/${DashboardUserPool}
+              audience:
+                - !Ref DashboardUserPoolClient
       CorsConfiguration:
         AllowHeaders:
+          - authorization
           - content-type
           - x-requested-with
         AllowMethods:
@@ -335,3 +413,19 @@ Outputs:
   LatestCallersIndexName:
     Description: GSI used to query recent caller records efficiently.
     Value: LatestCallersIndex
+
+  DashboardUserPoolId:
+    Description: Cognito User Pool ID used by the dashboard.
+    Value: !Ref DashboardUserPool
+
+  DashboardUserPoolClientId:
+    Description: Cognito app client ID used by the dashboard.
+    Value: !Ref DashboardUserPoolClient
+
+  DashboardCognitoAuthority:
+    Description: OIDC authority URL used by the dashboard.
+    Value: !Sub https://cognito-idp.${AWS::Region}.${AWS::URLSuffix}/${DashboardUserPool}
+
+  DashboardCognitoHostedUiUrl:
+    Description: Cognito hosted UI base URL.
+    Value: !Sub https://${DashboardUserPoolDomain}.auth.${AWS::Region}.amazoncognito.com

@@ -1,10 +1,28 @@
-import { AlertCircle, CheckCircle2, Clock3, Copy, Phone, RefreshCw, Search } from 'lucide-react';
+import {
+  AlertCircle,
+  CheckCircle2,
+  Clock3,
+  Copy,
+  LogIn,
+  LogOut,
+  Phone,
+  RefreshCw,
+  Search,
+} from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { defaultApiEndpoint, fetchLatestCallers } from './api';
+import {
+  completeSignInIfNeeded,
+  isAuthConfigured,
+  signIn,
+  signOut,
+  type AuthSession,
+} from './auth';
 import type { CallerRecord } from './types';
 
 type LoadState = 'idle' | 'loading' | 'ready' | 'error';
+type AuthState = 'checking' | 'disabled' | 'signed-out' | 'signed-in' | 'error';
 
 const deployedFallbackEndpoint =
   'https://70lijskhr5.execute-api.us-east-1.amazonaws.com/dev/callers/latest';
@@ -16,6 +34,28 @@ export function App() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
+  const [authState, setAuthState] = useState<AuthState>('checking');
+  const [authSession, setAuthSession] = useState<AuthSession | null>(null);
+
+  useEffect(() => {
+    async function initializeAuth() {
+      if (!isAuthConfigured()) {
+        setAuthState('disabled');
+        return;
+      }
+
+      try {
+        const session = await completeSignInIfNeeded();
+        setAuthSession(session);
+        setAuthState(session === null ? 'signed-out' : 'signed-in');
+      } catch (error) {
+        setAuthState('error');
+        setErrorMessage(error instanceof Error ? error.message : 'Unable to initialize sign in.');
+      }
+    }
+
+    void initializeAuth();
+  }, []);
 
   const loadRecords = useCallback(async () => {
     const endpoint = apiEndpoint.trim();
@@ -26,11 +66,21 @@ export function App() {
       return;
     }
 
+    if (authState === 'checking') {
+      return;
+    }
+
+    if (authState === 'signed-out') {
+      setLoadState('idle');
+      setErrorMessage('Sign in to load caller records.');
+      return;
+    }
+
     setLoadState('loading');
     setErrorMessage(null);
 
     try {
-      const payload = await fetchLatestCallers(endpoint);
+      const payload = await fetchLatestCallers(endpoint, authSession?.accessToken);
       setRecords(payload.items);
       setLastUpdatedAt(new Date());
       setLoadState('ready');
@@ -38,11 +88,13 @@ export function App() {
       setLoadState('error');
       setErrorMessage(error instanceof Error ? error.message : 'Unable to load caller records.');
     }
-  }, [apiEndpoint]);
+  }, [apiEndpoint, authSession?.accessToken, authState]);
 
   useEffect(() => {
-    void loadRecords();
-  }, [loadRecords]);
+    if (authState !== 'checking') {
+      void loadRecords();
+    }
+  }, [authState, loadRecords]);
 
   const filteredRecords = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -116,6 +168,12 @@ export function App() {
           <RefreshCw size={18} />
           <span>{isLoading ? 'Refreshing' : 'Refresh'}</span>
         </button>
+        <AuthControl
+          authState={authState}
+          email={authSession?.email ?? null}
+          onSignIn={() => void signIn()}
+          onSignOut={() => void signOut()}
+        />
       </section>
 
       <section className="metrics-grid" aria-label="Call metrics">
@@ -164,6 +222,42 @@ export function App() {
         </span>
       </footer>
     </main>
+  );
+}
+
+function AuthControl({
+  authState,
+  email,
+  onSignIn,
+  onSignOut,
+}: {
+  authState: AuthState;
+  email: string | null;
+  onSignIn: () => void;
+  onSignOut: () => void;
+}) {
+  if (authState === 'disabled') {
+    return (
+      <div className="auth-status" aria-label="Authentication status">
+        <span>Auth not configured</span>
+      </div>
+    );
+  }
+
+  if (authState === 'signed-in') {
+    return (
+      <button className="icon-button icon-button--secondary" onClick={onSignOut}>
+        <LogOut size={18} />
+        <span>{email ?? 'Sign out'}</span>
+      </button>
+    );
+  }
+
+  return (
+    <button className="icon-button icon-button--secondary" onClick={onSignIn}>
+      <LogIn size={18} />
+      <span>{authState === 'checking' ? 'Checking' : 'Sign in'}</span>
+    </button>
   );
 }
 
