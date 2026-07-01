@@ -83,7 +83,7 @@ Resources:
               "Identifier": "Enable logging",
               "Type": "UpdateFlowLoggingBehavior",
               "Parameters": {
-                "LoggingBehavior": "Enabled"
+                "FlowLoggingBehavior": "Enabled"
               },
               "Transitions": {
                 "NextAction": "Generate vanity numbers",
@@ -138,8 +138,7 @@ Resources:
               "Identifier": "Speak vanity numbers",
               "Type": "MessageParticipant",
               "Parameters": {
-                "Text": "Your top vanity numbers are $.External.vanity1, $.External.vanity2, and $.External.vanity3.",
-                "TextType": "text/plain"
+                "Text": "Your top vanity numbers are $.External.vanity1, $.External.vanity2, and $.External.vanity3."
               },
               "Transitions": {
                 "NextAction": "Disconnect",
@@ -151,8 +150,7 @@ Resources:
               "Identifier": "Speak failure",
               "Type": "MessageParticipant",
               "Parameters": {
-                "Text": "We were unable to generate vanity numbers for your phone number.",
-                "TextType": "text/plain"
+                "Text": "We were unable to generate vanity numbers for your phone number."
               },
               "Transitions": {
                 "NextAction": "Disconnect",

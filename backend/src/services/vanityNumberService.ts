@@ -21,6 +21,7 @@ export function generateVanityNumbers(
   const letters = new Set<string>();
 
   addCommonWordMatches(vanityDigits, letters);
+  addPartialWordMatches(vanityDigits, letters);
   addGeneratedCombinations(vanityDigits, letters, maxCandidates);
 
   return [...letters]
@@ -43,6 +44,26 @@ function addCommonWordMatches(vanityDigits: string, candidates: Set<string>): vo
     if (word.length === vanityDigits.length && wordToDigits(word) === vanityDigits) {
       candidates.add(word);
     }
+  }
+}
+
+function addPartialWordMatches(vanityDigits: string, candidates: Set<string>): void {
+  for (const word of COMMON_WORDS) {
+    if (word.length < 3 || word.length >= vanityDigits.length) {
+      continue;
+    }
+
+    const wordDigits = wordToDigits(word);
+    const startIndex = vanityDigits.indexOf(wordDigits);
+
+    if (startIndex === -1) {
+      continue;
+    }
+
+    const candidate =
+      vanityDigits.slice(0, startIndex) + word + vanityDigits.slice(startIndex + wordDigits.length);
+
+    candidates.add(candidate);
   }
 }
 

@@ -18,6 +18,7 @@ The application receives a caller phone number from Amazon Connect, generates ra
 - S3 + CloudFront hosting for the dashboard frontend.
 - GitHub Actions CI and manual SAM deployment workflow.
 - Optional Amazon Connect contact flow deployment artifacts.
+- Live Amazon Connect validation path with a claimed phone number.
 
 ## Architecture
 
@@ -63,14 +64,17 @@ Telephone keypad mapping:
 1 = 1
 ```
 
-The algorithm focuses on the last seven digits of the phone number because those are typically the most memorable portion. It first checks a local common-word list, then generates a capped deterministic candidate set to avoid unbounded combinatorial work.
+The algorithm focuses on the last seven digits of the phone number because those are typically the most memorable portion. It checks a local common-word list first, then looks for embedded words that can produce hybrid candidates such as `CALL123`, and finally generates a capped deterministic candidate set to avoid unbounded combinatorial work.
 
 Candidates score higher when they:
 
 - match a known local word, such as `FLOWERS`;
+- contain a known partial word, such as `CALL`;
 - contain a balanced number of vowels;
 - avoid long repeated letter runs;
+- look more pronounceable through shorter consonant runs and more vowel/consonant transitions;
 - convert the complete seven-digit vanity segment;
+- retain digits only when that helps preserve a recognizable word;
 - avoid rare letters unless needed.
 
 The algorithm does not call external services, which keeps the Lambda deterministic, inexpensive, and reliable.
@@ -114,6 +118,21 @@ docs/
 
 package.json            Root orchestration scripts
 ```
+
+## Documentation Guide
+
+Start with this README for the reviewer path. The other documents are intentionally split by task:
+
+| Document                                                                                     | Purpose                                                                                                           |
+| -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| [docs/aws-deployment-permissions-and-setup.md](docs/aws-deployment-permissions-and-setup.md) | AWS IAM, SAM deploy, GitHub Actions OIDC, and hosted dashboard publishing.                                        |
+| [docs/amazon-connect-setup.md](docs/amazon-connect-setup.md)                                 | Connect instance, Lambda association, contact flow deployment, phone number attachment, and live-call validation. |
+| [docs/manual-testing.md](docs/manual-testing.md)                                             | CLI-based Lambda/API/dashboard checks without placing a phone call.                                               |
+| [docs/authentication.md](docs/authentication.md)                                             | Cognito dashboard login and reviewer/demo user creation.                                                          |
+| [docs/environment.md](docs/environment.md)                                                   | Runtime config, SSM parameters, and local frontend variables.                                                     |
+| [docs/architecture.md](docs/architecture.md)                                                 | Runtime and deployment diagrams.                                                                                  |
+| [docs/project-notes.md](docs/project-notes.md)                                               | Assignment writing prompts: decisions, struggles, shortcuts, and future work.                                     |
+| [docs/agents/README.md](docs/agents/README.md)                                               | Optional reviewer-agent prompts used during development.                                                          |
 
 ## Local Development
 
@@ -167,33 +186,7 @@ Stage:  dev
 
 Override them with environment variables such as `STACK_NAME`, `AWS_REGION`, `STAGE`, and `CONNECT_INSTANCE_ARN` when needed.
 
-For the IAM deployment policy, AWS account setup, and non-interactive deploy command, see:
-
-[docs/aws-deployment-permissions-and-setup.md](docs/aws-deployment-permissions-and-setup.md)
-
-For manual post-deploy verification, see:
-
-[docs/manual-testing.md](docs/manual-testing.md)
-
-For dashboard authentication, see:
-
-[docs/authentication.md](docs/authentication.md)
-
-For Amazon Connect configuration, see:
-
-[docs/amazon-connect-setup.md](docs/amazon-connect-setup.md)
-
-For the runtime and deployment diagrams, see:
-
-[docs/architecture.md](docs/architecture.md)
-
-For reusable pre-commit review prompts, see:
-
-[docs/agents/README.md](docs/agents/README.md)
-
-For implementation rationale, challenges, production shortcuts, and future improvements, see:
-
-[docs/project-notes.md](docs/project-notes.md)
+Use the [Documentation Guide](#documentation-guide) above for task-specific details.
 
 ## Infrastructure
 
@@ -225,6 +218,7 @@ Amazon Connect artifacts provide:
 
 - Reference flow content at `docs/amazon-connect/contact-flow-content.json`.
 - Optional CloudFormation resources at `docs/amazon-connect/connect-resources.template.yaml`.
+- A deployable flow named `Vanity Number Generator` that invokes the Lambda and speaks the top three returned values.
 
 ## Security And Privacy
 
@@ -276,4 +270,4 @@ Also release any Amazon Connect phone numbers that are no longer needed, because
 
 - Dashboard authentication is implemented with Cognito, but MFA is not enforced by default.
 - Amazon Connect live call testing requires a claimed number and can incur charges.
-- The current vanity scoring is deterministic and explainable, but intentionally lightweight.
+- The vanity scoring is deterministic and explainable, but still uses a curated local word list rather than a large dictionary or natural-language model.

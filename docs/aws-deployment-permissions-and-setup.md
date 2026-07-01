@@ -283,6 +283,7 @@ For production, split this into narrower policies. In particular, scope `iam:Pas
       "Action": [
         "connect:ListInstances",
         "connect:DescribeInstance",
+        "connect:ListLambdaFunctions",
         "connect:AssociateLambdaFunction",
         "connect:DisassociateLambdaFunction",
         "connect:CreateIntegrationAssociation",

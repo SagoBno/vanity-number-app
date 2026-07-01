@@ -33,13 +33,13 @@ flowchart TD
     SAM --> Dynamo[DynamoDB and KMS]
     SAM --> HttpApi[HTTP API]
     SAM --> Hosting[S3 and CloudFront Dashboard Hosting]
-    ConnectTemplate[Optional Connect Template] --> Connect[Amazon Connect Flow]
+    ConnectTemplate[Optional Connect Template] --> Connect[Amazon Connect Flow and Lambda Association]
 ```
 
 ## Data Flow
 
 1. Amazon Connect invokes the generation Lambda with the caller endpoint address.
-2. The Lambda normalizes the phone number and generates deterministic vanity candidates.
+2. The Lambda normalizes the phone number and generates deterministic vanity candidates from exact word matches, embedded word matches, and capped keypad combinations.
 3. The top five candidates and masked caller number are stored in DynamoDB with TTL, a GSI-friendly record type, and a `ContactId`-based idempotency key when available.
 4. The top three candidates are returned to Amazon Connect as external string attributes.
 5. The dashboard API reads recent records through `LatestCallersIndex` and returns the stored masked caller numbers.

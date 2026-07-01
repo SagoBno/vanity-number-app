@@ -10,6 +10,8 @@ This guide connects the deployed `generateVanityNumbers` Lambda to an Amazon Con
 - A claimed Amazon Connect phone number for live testing.
 - If using GitHub Actions, the `Deploy` workflow has access to the `AWS_DEPLOY_ROLE_ARN` secret and the deployment role has the Amazon Connect permissions from `docs/aws-deployment-permissions-and-setup.md`.
 
+The Connect deployment policy must include the Lambda integration and tagging actions used by CloudFormation, including `connect:ListLambdaFunctions`, `connect:TagResource`, and `connect:UntagResource`.
+
 The repository includes optional Connect deployment artifacts:
 
 ```txt
@@ -80,6 +82,18 @@ aws cloudformation deploy \
 
 After deployment, open Amazon Connect and attach a claimed phone number to the generated contact flow.
 
+If a failed earlier deployment left the stack in `ROLLBACK_COMPLETE`, delete it before retrying:
+
+```bash
+aws cloudformation delete-stack \
+  --stack-name vanity-number-connect-dev \
+  --region us-east-1
+
+aws cloudformation wait stack-delete-complete \
+  --stack-name vanity-number-connect-dev \
+  --region us-east-1
+```
+
 ### Option B: Create Or Import Manually
 
 Create a contact flow with these blocks:
@@ -115,8 +129,8 @@ The Lambda returns string attributes:
 {
   "success": "true",
   "vanity1": "+1-800-FLOWERS",
-  "vanity2": "+1-800-ELOWERS",
-  "vanity3": "+1-800-DLOWERS"
+  "vanity2": "+1-800-...",
+  "vanity3": "+1-800-..."
 }
 ```
 
@@ -158,6 +172,22 @@ The Lambda intentionally returns safe fallback values for handled errors so the 
 3. Assign the number to this contact flow.
 4. Place a test call.
 
+For a Colombia toll-free number, dial the local toll-free format from Colombia, for example `018000XXXXXX`, instead of adding `+57`. If dialing fails from one mobile carrier, test from another carrier or a fixed line because toll-free reachability can vary by carrier.
+
+## 6. Verify The Dashboard
+
+Read the hosted dashboard URL from CloudFormation:
+
+```bash
+aws cloudformation describe-stacks \
+  --stack-name vanity-number-app-dev \
+  --region us-east-1 \
+  --query "Stacks[0].Outputs[?OutputKey=='DashboardUrl'].OutputValue" \
+  --output text
+```
+
+After the call, sign in to the dashboard with the Cognito reviewer user and refresh the records. The latest item should show the masked caller number, the top three vanity values, and `5 stored candidates`.
+
 ## Operational Notes
 
 - Limit live call testing because Amazon Connect phone numbers and minutes may generate cost.
@@ -166,3 +196,4 @@ The Lambda intentionally returns safe fallback values for handled errors so the 
 - Review Lambda logs for request IDs, contact IDs, and masked caller numbers.
 - If the Lambda does not appear in Amazon Connect, confirm it was associated with the same Connect instance and region.
 - If invocation fails, confirm the Lambda permission includes `connect.amazonaws.com` and the correct account/region.
+- If the flow CloudFormation stack fails with `InvalidContactFlowException`, validate the flow-language parameters in `docs/amazon-connect/connect-resources.template.yaml`.

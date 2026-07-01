@@ -80,10 +80,12 @@ Successful generation responses have this shape:
 {
   "success": "true",
   "vanity1": "+1-800-FLOWERS",
-  "vanity2": "+1-800-DJOWEPP",
-  "vanity3": "+1-800-DJOWEPR"
+  "vanity2": "+1-800-...",
+  "vanity3": "+1-800-..."
 }
 ```
+
+The first value should be `+1-800-FLOWERS` for the bundled sample event. Lower-ranked candidates can change as the scoring rules evolve.
 
 ## 4. Query The Dashboard API
 
