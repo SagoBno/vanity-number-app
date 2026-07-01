@@ -214,6 +214,7 @@ jobs:
             echo "dashboard_bucket=$(output DashboardBucketName)"
             echo "dashboard_distribution_id=$(output DashboardDistributionId)"
             echo "dashboard_url=$(output DashboardUrl)"
+            echo "generate_function_arn=$(output GenerateVanityNumbersFunctionArn)"
             echo "user_pool_id=$(output DashboardUserPoolId)"
             echo "cognito_authority=$(output DashboardCognitoAuthority)"
             echo "cognito_hosted_ui_url=$(output DashboardCognitoHostedUiUrl)"
@@ -244,6 +245,7 @@ jobs:
         env:
           API_ENDPOINT: ${{ steps.stack-outputs.outputs.api_endpoint }}
           DASHBOARD_URL: ${{ steps.stack-outputs.outputs.dashboard_url }}
+          GENERATE_FUNCTION_ARN: ${{ steps.stack-outputs.outputs.generate_function_arn }}
           USER_POOL_ID: ${{ steps.stack-outputs.outputs.user_pool_id }}
           COGNITO_CLIENT_ID: ${{ steps.stack-outputs.outputs.cognito_client_id }}
           REGION: ${{ inputs.region }}
@@ -255,8 +257,21 @@ jobs:
             echo "| --- | --- |"
             echo "| DashboardUrl | ${DASHBOARD_URL} |"
             echo "| ApiEndpoint | ${API_ENDPOINT} |"
+            echo "| GenerateVanityNumbersFunctionArn | ${GENERATE_FUNCTION_ARN} |"
             echo "| Cognito User Pool | ${USER_POOL_ID} |"
             echo "| Cognito Client | ${COGNITO_CLIENT_ID} |"
+            echo ""
+            echo "### Deploy optional Amazon Connect resources"
+            echo ""
+            echo '```bash'
+            echo "aws cloudformation deploy \\"
+            echo "  --stack-name vanity-number-connect-dev \\"
+            echo "  --region ${REGION} \\"
+            echo "  --template-file docs/amazon-connect/connect-resources.template.yaml \\"
+            echo "  --parameter-overrides \\"
+            echo "    ConnectInstanceArn=CONNECT_INSTANCE_ARN \\"
+            echo "    GenerateVanityNumbersFunctionArn=${GENERATE_FUNCTION_ARN}"
+            echo '```'
             echo ""
             echo "### Create a demo user"
             echo ""
