@@ -2,14 +2,14 @@
 
 Production-oriented AWS serverless implementation for the Amazon Connect vanity number assignment.
 
-The application receives a caller phone number from Amazon Connect, generates ranked vanity number candidates, stores the best results in DynamoDB, and exposes the latest caller records through an HTTP API for a dashboard or reviewer-facing client. The dashboard API returns masked caller numbers only.
+The application receives a caller phone number from Amazon Connect, generates ranked vanity number candidates, stores the best results in DynamoDB with only a masked caller number, and exposes the latest caller records through an HTTP API for a dashboard or reviewer-facing client.
 
 ## Implemented Scope
 
 - `generateVanityNumbers` Lambda for Amazon Connect.
 - `getLastCallers` Lambda behind API Gateway HTTP API.
 - Cognito/JWT authentication for the dashboard API.
-- DynamoDB persistence with GSI-backed latest-caller reads.
+- DynamoDB persistence with masked caller data and GSI-backed latest-caller reads.
 - TypeScript domain logic for phone normalization, keypad conversion, candidate scoring, and PII masking.
 - AWS SAM infrastructure as code.
 - Unit and handler tests with Jest.
@@ -42,7 +42,7 @@ flowchart TD
 3. The phone number is normalized and validated.
 4. The last seven digits are converted into vanity candidates.
 5. Candidates are scored deterministically.
-6. The top five vanity numbers are stored in DynamoDB with a `ContactId`-based idempotency key when available.
+6. The top five vanity numbers and masked caller number are stored in DynamoDB with a `ContactId`-based idempotency key when available.
 7. The top three are returned to Amazon Connect as string attributes.
 8. `GET /callers/latest` returns the latest caller records for a dashboard with masked caller numbers.
 
@@ -230,7 +230,8 @@ Amazon Connect artifacts provide:
 
 - Phone numbers are treated as PII.
 - Logs use masked phone numbers.
-- The dashboard API returns masked caller numbers instead of full stored phone numbers.
+- DynamoDB stores masked caller numbers instead of full caller phone numbers.
+- The dashboard API returns masked caller numbers.
 - DynamoDB records include TTL to limit retention.
 - The table is encrypted at rest with KMS.
 - Runtime configuration is loaded from SSM Parameter Store.
@@ -241,7 +242,7 @@ Amazon Connect artifacts provide:
 Production hardening options:
 
 - Require MFA for dashboard users.
-- Hash or tokenize full phone numbers in storage, or store only the last four digits if the full value is not required.
+- Use keyed hashing or tokenization if future product requirements need caller correlation beyond `ContactId`.
 - Add CloudWatch alarms for Lambda errors, throttles, and DynamoDB failures.
 - Add custom metrics for successful generations, validation errors, and persistence errors.
 

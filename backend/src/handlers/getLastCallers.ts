@@ -8,7 +8,6 @@ import type { CallerRepository } from '../repositories/callerRepository';
 import { DynamoDbCallerRepository } from '../repositories/callerRepository';
 import type { CallerRecord, CallerSummary } from '../types/callerRecord';
 import { log } from '../utils/logger';
-import { maskPhoneNumber } from '../utils/maskPhoneNumber';
 import { jsonResponse } from '../utils/response';
 
 const LATEST_CALLERS_LIMIT = 5;
@@ -47,7 +46,7 @@ export const handler = createGetLastCallersHandler();
 
 function toCallerSummary(record: CallerRecord): CallerSummary {
   const baseSummary: CallerSummary = {
-    callerNumberMasked: maskPhoneNumber(record.callerNumber),
+    callerNumberMasked: record.callerNumberMasked,
     createdAt: record.createdAt,
     vanityNumbers: record.vanityNumbers,
     topThree: record.topThree,

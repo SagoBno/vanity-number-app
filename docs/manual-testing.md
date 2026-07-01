@@ -126,6 +126,8 @@ aws dynamodb scan \
 
 This is a diagnostic check only. The application itself reads latest records through the `LatestCallersIndex` GSI.
 
+The DynamoDB items should include `callerNumberMasked` and should not include the full caller number.
+
 ## 6. Optional Logs Check
 
 ```bash

@@ -22,7 +22,7 @@ describe('getLastCallers handler', () => {
   it('returns the latest caller records', async () => {
     const item: CallerRecord = {
       recordId: 'contact-123',
-      callerNumber: '+18003569377',
+      callerNumberMasked: '+*******9377',
       createdAt: '2026-06-25T18:00:00.000Z',
       contactId: 'contact-123',
       vanityNumbers: ['+1-800-FLOWERS'],

@@ -145,6 +145,13 @@ jobs:
       - name: Build SAM application
         run: npm run sam:build
 
+      - name: Recover failed stack deletion
+        env:
+          STACK_NAME: vanity-number-app-${{ inputs.stage }}
+          STAGE: ${{ inputs.stage }}
+          AWS_REGION: ${{ inputs.region }}
+        run: npm run stack:recover-delete-failed
+
       - name: Deploy SAM stack
         env:
           STAGE: ${{ inputs.stage }}

@@ -22,6 +22,7 @@
     "sam:build": "SAM_BIN=$(command -v sam || printf .tools/bin/sam) && HOME=/tmp SAM_CLI_TELEMETRY=0 PATH=\"$PWD/backend/node_modules/.bin:$PATH\" \"$SAM_BIN\" build --template-file backend/template.yaml",
     "sam:validate": "SAM_BIN=$(command -v sam || printf .tools/bin/sam) && HOME=/tmp SAM_CLI_TELEMETRY=0 \"$SAM_BIN\" validate --lint --template-file backend/template.yaml",
     "setup": "node scripts/setup.mjs",
+    "stack:recover-delete-failed": "node scripts/recover-delete-failed-stack.mjs",
     "test": "npm run backend:test",
     "typecheck": "npm run backend:typecheck"
   },

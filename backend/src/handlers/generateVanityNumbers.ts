@@ -43,7 +43,7 @@ export function createGenerateVanityNumbersHandler(repository?: CallerRepository
       const topFive = candidates.slice(0, 5).map((candidate) => candidate.value);
       const topThree = topFive.slice(0, 3);
       const record = buildCallerRecord(
-        normalized.e164,
+        callerNumberMasked,
         topFive,
         topThree,
         config.ttlDays,
@@ -77,7 +77,7 @@ export function createGenerateVanityNumbersHandler(repository?: CallerRepository
 }
 
 function buildCallerRecord(
-  callerNumber: string,
+  callerNumberMasked: string,
   vanityNumbers: string[],
   topThree: string[],
   ttlDays: number,
@@ -86,10 +86,10 @@ function buildCallerRecord(
   const now = new Date();
   const createdAt = now.toISOString();
   const ttl = Math.floor(now.getTime() / 1000) + ttlDays * 24 * 60 * 60;
-  const recordId = contactId ?? `${callerNumber}#${createdAt}`;
+  const recordId = contactId ?? `${callerNumberMasked}#${createdAt}`;
   const baseRecord: CallerRecord = {
     recordId,
-    callerNumber,
+    callerNumberMasked,
     createdAt,
     vanityNumbers,
     topThree,

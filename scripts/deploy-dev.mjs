@@ -24,6 +24,14 @@ console.log('Leave dashboard URL parameters empty to use the generated CloudFron
 
 run(npmCommand, ['run', 'sam:validate']);
 run(npmCommand, ['run', 'sam:build']);
+run(npmCommand, ['run', 'stack:recover-delete-failed'], {
+  env: {
+    ...process.env,
+    AWS_REGION: region,
+    STACK_NAME: stackName,
+    STAGE: stage,
+  },
+});
 
 const parameterOverrides = [
   `Stage=${stage}`,

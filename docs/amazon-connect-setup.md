@@ -8,6 +8,7 @@ This guide connects the deployed `generateVanityNumbers` Lambda to an Amazon Con
 - `GenerateVanityNumbersFunctionArn` copied from the SAM outputs.
 - Amazon Connect instance created in the same AWS account and region as the Lambda.
 - A claimed Amazon Connect phone number for live testing.
+- If using GitHub Actions, the `Deploy` workflow has access to the `AWS_DEPLOY_ROLE_ARN` secret and the deployment role has the Amazon Connect permissions from `docs/aws-deployment-permissions-and-setup.md`.
 
 The repository includes optional Connect deployment artifacts:
 
@@ -17,6 +18,31 @@ docs/amazon-connect/connect-resources.template.yaml
 ```
 
 ## 1. Associate The Lambda
+
+Recommended first step: redeploy the main SAM stack with the Connect instance ARN so Lambda invoke permission is scoped to that instance.
+
+Find the Connect instance ARN:
+
+1. Open the Amazon Connect console.
+2. Select the target instance.
+3. Copy the instance ARN from the instance overview/details page.
+
+Redeploy with GitHub Actions:
+
+1. Go to `Actions` -> `Deploy` -> `Run workflow`.
+2. Keep `stage=dev` and `region=us-east-1`.
+3. Leave the dashboard URL fields empty for CloudFront hosting.
+4. Paste the instance ARN into `connect_instance_arn`.
+5. Run the workflow.
+
+Redeploy locally:
+
+```bash
+CONNECT_INSTANCE_ARN=arn:aws:connect:us-east-1:123456789012:instance/00000000-0000-0000-0000-000000000000 \
+npm run deploy:dev
+```
+
+After redeploy, add the Lambda to the Connect instance:
 
 1. Open the Amazon Connect console.
 2. Select the target Amazon Connect instance.
@@ -29,7 +55,32 @@ The SAM template grants Amazon Connect permission to invoke the Lambda from the 
 
 The association can also be created with CloudFormation through `docs/amazon-connect/connect-resources.template.yaml`.
 
-## 2. Create The Contact Flow
+## 2. Create Or Deploy The Contact Flow
+
+### Option A: Deploy With CloudFormation
+
+Use the optional template to create the Lambda association and contact flow:
+
+```bash
+CONNECT_INSTANCE_ARN=arn:aws:connect:us-east-1:123456789012:instance/00000000-0000-0000-0000-000000000000
+GENERATE_FUNCTION_ARN=$(aws cloudformation describe-stacks \
+  --stack-name vanity-number-app-dev \
+  --region us-east-1 \
+  --query "Stacks[0].Outputs[?OutputKey=='GenerateVanityNumbersFunctionArn'].OutputValue" \
+  --output text)
+
+aws cloudformation deploy \
+  --stack-name vanity-number-connect-dev \
+  --region us-east-1 \
+  --template-file docs/amazon-connect/connect-resources.template.yaml \
+  --parameter-overrides \
+    ConnectInstanceArn="$CONNECT_INSTANCE_ARN" \
+    GenerateVanityNumbersFunctionArn="$GENERATE_FUNCTION_ARN"
+```
+
+After deployment, open Amazon Connect and attach a claimed phone number to the generated contact flow.
+
+### Option B: Create Or Import Manually
 
 Create a contact flow with these blocks:
 
@@ -107,33 +158,11 @@ The Lambda intentionally returns safe fallback values for handled errors so the 
 3. Assign the number to this contact flow.
 4. Place a test call.
 
-## Optional CloudFormation Deployment
-
-Deploy the Connect resources after the main SAM stack is deployed:
-
-```bash
-CONNECT_INSTANCE_ARN=arn:aws:connect:us-east-1:123456789012:instance/00000000-0000-0000-0000-000000000000
-GENERATE_FUNCTION_ARN=$(aws cloudformation describe-stacks \
-  --stack-name vanity-number-app-dev \
-  --region us-east-1 \
-  --query "Stacks[0].Outputs[?OutputKey=='GenerateVanityNumbersFunctionArn'].OutputValue" \
-  --output text)
-
-aws cloudformation deploy \
-  --stack-name vanity-number-connect-dev \
-  --region us-east-1 \
-  --template-file docs/amazon-connect/connect-resources.template.yaml \
-  --parameter-overrides \
-    ConnectInstanceArn="$CONNECT_INSTANCE_ARN" \
-    GenerateVanityNumbersFunctionArn="$GENERATE_FUNCTION_ARN"
-```
-
-After deployment, attach a claimed Amazon Connect phone number to the generated contact flow.
-
 ## Operational Notes
 
 - Limit live call testing because Amazon Connect phone numbers and minutes may generate cost.
 - Do not log full caller numbers in CloudWatch.
+- The Lambda uses the raw caller number only in memory. DynamoDB stores `callerNumberMasked`, not the full caller phone number.
 - Review Lambda logs for request IDs, contact IDs, and masked caller numbers.
 - If the Lambda does not appear in Amazon Connect, confirm it was associated with the same Connect instance and region.
 - If invocation fails, confirm the Lambda permission includes `connect.amazonaws.com` and the correct account/region.

@@ -317,6 +317,8 @@ npm run deploy:dev
 
 `npm run setup` installs root, backend, and frontend dependencies. `npm run deploy:dev` validates and builds the SAM application, deploys the backend and hosting infrastructure, builds the dashboard, generates `frontend/dist/config.js` from CloudFormation outputs, uploads `frontend/dist` to S3, invalidates CloudFront, and prints `DashboardUrl`.
 
+If a previous dev stack deletion failed because the hosted dashboard bucket was not empty, the deploy command automatically empties the stack-owned `DashboardBucket`, completes the delete, and then recreates the stack. This recovery is intentionally scoped to the generated dashboard bucket and is blocked for `prod` unless `ALLOW_PROD_STACK_RECOVERY=true` is set.
+
 The deploy command defaults to:
 
 ```txt
