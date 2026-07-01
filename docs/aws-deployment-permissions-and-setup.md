@@ -519,7 +519,7 @@ Replace `ACCOUNT_ID`, `OWNER`, and `REPO`. If you deploy `staging` or `prod`, cr
 AWS_DEPLOY_ROLE_ARN
 ```
 
-8. Go to `Actions` -> `CI` to confirm the validation workflow runs on pull requests and pushes to `main`.
+8. Go to `Actions` -> `CI` to confirm the validation workflow runs on pull requests and pushes to `main` or `master`.
 9. Go to `Actions` -> `Deploy` -> `Run workflow`.
 10. Choose `dev` and `us-east-1`. Leave `allowed_origin`, `dashboard_callback_url`, and `dashboard_logout_url` empty for CloudFront hosting. Leave `connect_instance_arn` empty until Amazon Connect is available.
 11. After the workflow finishes, open the GitHub Actions run summary. It prints `DashboardUrl`, `ApiEndpoint`, Cognito IDs, and demo-user creation commands.
